@@ -20,6 +20,8 @@ Thumbs.db
 
 # Chroma DB
 .chroma_db/
+*.sqlite3
+
 
 # Logs
 *.log
