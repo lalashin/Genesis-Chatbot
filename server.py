@@ -12,9 +12,14 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 
 # .env 로드 및 검증
+# .env 로드
 load_dotenv()
+
+# API 키 확인
 if not os.getenv("OPENAI_API_KEY"):
-    raise ValueError("OPENAI_API_KEY가 .env 파일에 설정되지 않았습니다.")
+    print("경고: .env 파일에서 OPENAI_API_KEY를 찾을 수 없습니다. 시스템 환경 변수를 확인하세요.")
+    if not os.getenv("OPENAI_API_KEY"):
+         raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
 
 app = FastAPI()
 
@@ -30,20 +35,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === 임베딩 & 벡터DB 로드 ===
+# === 임베딩 & 벡터DB 초기화 (In-Memory) ===
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# 1. PDF 로드
+current_dir = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(current_dir, "Genesis_2026.pdf")
+
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"매뉴얼 파일이 없습니다: {file_path}")
+
+print("매뉴얼 로딩 및 임베딩 중... (서버 시작 시 약 10~20초 소요됩니다)")
+loader = PyPDFLoader(file_path)
+docs = loader.load()
+
+# 2. 문서 분할
+text_splitter = RecursiveCharacterTextSplitter(
+    separators=["\n\n", "\n", ".", " "],
+    chunk_size=1000,
+    chunk_overlap=200,
+    length_function=len
+)
+splits = text_splitter.split_documents(docs)
+
+# 3. 임베딩 모델
 embeddings = OpenAIEmbeddings(
     model="text-embedding-3-small",
     dimensions=1536,
 )
 
-# 벡터DB 존재 확인
-if not os.path.exists("./.chroma_db"):
-    raise FileNotFoundError("벡터 DB가 존재하지 않습니다. 먼저 데이터를 임베딩하세요.")
-
-vectorstore = Chroma(
-    persist_directory="./.chroma_db",
-    embedding_function=embeddings
+# 4. 벡터 저장소 생성 (In-Memory)
+# persist_directory를 지정하지 않으면 메모리에만 저장됨
+vectorstore = Chroma.from_documents(
+    documents=splits,
+    embedding=embeddings
 )
+print("매뉴얼 임베딩 완료!")
 
 # === 검색 Tool 정의 ===
 @tool(response_format="content_and_artifact")
