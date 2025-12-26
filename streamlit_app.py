@@ -535,8 +535,10 @@ js_code = """
             console.warn("음성 인식은 HTTPS 또는 로컬 환경에서만 작동합니다.");
         }
 
-        if ('webkitSpeechRecognition' in window.parent) {
-            recognition = new window.parent.webkitSpeechRecognition();
+        var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition || window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
             recognition.lang = 'ko-KR';
             recognition.continuous = false;
             recognition.interimResults = false;

@@ -1,0 +1,43 @@
+# 모바일 음성 인식 호환성 개선 (Fix Mobile Voice Recognition Compatibility)
+
+현재 구현은 `window.parent.webkitSpeechRecognition`에만 의존하고 있습니다. 이는 표준 `SpeechRecognition` API를 사용하거나 iframe 정책이 더 엄격한 모바일 브라우저에서 실패할 수 있습니다. 이 계획은 음성 인식 API에 대한 더 강력한 확인 절차를 도입합니다.
+
+## 사용자 검토 필요 (User Review Required)
+> [!IMPORTANT]
+> 이 변경 사항은 Streamlit 앱에 주입되는 JavaScript를 수정합니다. `webkitSpeechRecognition`을 사용할 수 없는 경우 표준 `SpeechRecognition`을 사용하려고 시도하며, `window`와 `window.parent`를 모두 확인합니다.
+
+## 변경 제안 (Proposed Changes)
+
+### `d:\01\Genesis-Chatbot\streamlit_app.py`
+
+#### [MODIFY] [streamlit_app.py](file:///d:/01/Genesis-Chatbot/streamlit_app.py)
+
+- JavaScript 구현을 다음과 같이 수정합니다:
+    1.  `window`와 `window.parent` 모두에서 `SpeechRecognition` 및 `webkitSpeechRecognition`을 확인합니다.
+    2.  사용 가능한 생성자를 사용합니다.
+    3.  `getUserMedia`가 다양한 환경에서 작동하도록 보장합니다.
+
+```javascript
+/* 수정 전: 특정 API만 확인 */
+if ('webkitSpeechRecognition' in window.parent) {
+    recognition = new window.parent.webkitSpeechRecognition();
+    // ...
+}
+
+/* 수정 후: 더 강력한 로직 */
+var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition || window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    // ...
+}
+```
+
+## 검증 계획 (Verification Plan)
+
+### 수동 검증 (Manual Verification)
+1.  **PC 테스트**: Chrome 데스크톱(주로 `webkitSpeechRecognition` 사용)에서 음성 인식이 여전히 작동하는지 확인합니다.
+2.  **모바일 테스트 (사용자)**: 제가 모바일 환경에서 직접 테스트할 수 없으므로, 사용자에게 모바일 기기(Android/iOS)에서 확인을 요청합니다.
+    - 모바일에서 앱을 엽니다.
+    - 마이크 아이콘을 클릭합니다.
+    - 말을 하고 텍스트가 입력되는지 확인합니다.
