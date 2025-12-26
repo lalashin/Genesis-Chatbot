@@ -306,7 +306,7 @@ def get_chat_history(messages):
 
 # LLM & Agent 설정
 if "agent" not in st.session_state:
-    model = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
     tools = [search_manual]
     
     system_prompt = (
