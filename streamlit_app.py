@@ -9,7 +9,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
 from langchain.agents import create_agent
 from langchain.tools import tool
-from langchain_core.messages import ChatMessage
+from langchain_core.messages import ChatMessage, HumanMessage, AIMessage, SystemMessage
 
 # === 설정 및 초기화 ===
 st.set_page_config(page_title="제네시스 매뉴얼 챗봇", page_icon="🚗")
@@ -26,7 +26,7 @@ st.markdown("""
     /* 메인 배경 설정 */
     .stApp {
         background-color: #0a0a0a;
-        background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-desktop-2560x900.jpg');
+        background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-desktop-2560x900.jpg');
         background-size: cover;
         background-position: center;
         background-attachment: fixed;
@@ -35,7 +35,7 @@ st.markdown("""
     /* 모바일 반응형 배경 (index.html 참고) */
     @media (max-width: 768px) {
         .stApp {
-            background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-mobile-750x1400.jpg');
+            background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-mobile-750x1400.jpg');
         }
     }
 
@@ -45,6 +45,12 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 300 !important;
+    }
+    
+    /* Streamlit 상단 헤더 (Deploy 버튼 있는 영역) 투명화 */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+        /* 또는 완전히 숨기기: display: none !important; */
     }
     
     /* 일반 텍스트 색상 */
@@ -60,7 +66,7 @@ st.markdown("""
 
     /* 2. 입력 상자 래퍼(둥근 모서리 요소)를 블랙으로 설정, 높이 증가 */
     div[data-testid="stChatInput"] > div {
-        background-color: #000000 !important;
+        background-color: #1e1e1e !important;
         border-radius: 20px !important;
         border: 1px solid #333 !important;
         min-height: 60px !important; /* 높이 증가 */
@@ -107,12 +113,113 @@ st.markdown("""
         color: #e5e5e5 !important;
         opacity: 0.8;
     }
+
+    /* 6. 플로팅 토글 버튼 (메인 및 전역) */
+    div[data-testid="stButton"], div.stButton {
+        position: fixed !important;
+        bottom: 30px !important;
+        right: 30px !important;
+        z-index: 9999 !important;
+        width: 50px !important;
+        height: 50px !important;
+    }
+    div[data-testid="stButton"] > button, div.stButton > button {
+        width: 50px !important;
+        height: 50px !important;
+        border-radius: 50% !important;
+        background-color: #a38b6d !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 32px !important;
+        line-height: 1 !important;
+    }
+    div[data-testid="stButton"] > button:hover, div.stButton > button:hover {
+        transform: scale(1.1);
+        background-color: #b59c7d !important;
+    }
+
+    /* 사이드바 버튼 원래대로 복구 (Global !important 덮어쓰기) */
+    [data-testid="stSidebar"] div[data-testid="stButton"] {
+        position: static !important;
+        width: auto !important;
+        height: auto !important;
+        margin-top: 10px !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stButton"] > button {
+        width: 100% !important;
+        height: auto !important;
+        border-radius: 8px !important; /* 모서리 살짝 둥글게 */
+        background-color: #262730 !important;
+        color: white !important;
+        box-shadow: none !important;
+        padding: 0.5rem 1rem !important;
+        display: inline-flex !important;
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {
+        transform: none !important;
+        background-color: #3e404b !important;
+    }
+    /* Mobile Responsiveness */
+    @media only screen and (max-width: 600px) {
+        h1, h1 span {
+            font-size: 24px !important;
+        }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h1 span {
+            font-size: 20px !important;
+        }
+        /* 본문 및 채팅 폰트 축소 */
+        html, body, p, li, div, span, button, [class*="css"] {
+            font-size: 14px !important;
+        }
+        /* 특정 컴포넌트 예외 처리 (필요시) */
+        .stMarkdown p {
+            font-size: 14px !important;
+            line-height: 1.5 !important;
+        }
+        /* 버튼 텍스트도 줄임 (아이콘 제외) */
+        button p {
+            font-size: 14px !important;
+        }
+    }
+
+    /* 사이드바 스타일링 */
+    [data-testid="stSidebar"] {
+        background-color: #1e1e1e !important;
+        border-right: 1px solid #333 !important;
+    }
+    [data-testid="stSidebar"] h1 {
+        color: #fff !important;
+        font-weight: 300 !important;
+    }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] li, [data-testid="stSidebar"] span {
+        color: #e5e5e5 !important;
+    }
+    /* 탭 스타일링 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #888 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #a38b6d !important; /* 골드 컬러 */
+        border-bottom-color: #a38b6d !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("GENESIS AI Assistant")
 
 # 1. API Key 설정 (Streamlit Secrets 우선, 없으면 로컬 .env)
+
+
 try:
     if "OPENAI_API_KEY" in st.secrets:
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
@@ -186,15 +293,31 @@ def search_manual(query: str):
     return serialized
 
 # LLM & Agent 설정
+# Chat History 변환 헬퍼 함수
+def get_chat_history(messages):
+    history = []
+    # 마지막 메시지는 'input'이므로 제외
+    for msg in messages[:-1]:
+        if msg["role"] == "user":
+            history.append(HumanMessage(content=msg["content"]))
+        elif msg["role"] == "assistant":
+            history.append(AIMessage(content=msg["content"]))
+    return history
+
+# LLM & Agent 설정
 if "agent" not in st.session_state:
     model = ChatOpenAI(model="gpt-4o", temperature=0.2)
     tools = [search_manual]
+    
     system_prompt = (
         "당신은 현대자동차 제네시스 매뉴얼 전문가입니다.\n"
         "사용자의 질문에 친절하고 전문적으로 답변해주세요.\n"
         "특히 안전과 관련된 내용은 반드시 강조해서 설명해주세요.\n"
         "매뉴얼을 검색할 때는 search_manual 도구를 사용하세요."
     )
+
+    # Agent 생성 (Custom create_agent 사용)
+    # create_agent는 CompiledStateGraph를 반환하며, 이는 Runnable입니다.
     st.session_state.agent = create_agent(model, tools, system_prompt=system_prompt)
 
 # 4. 채팅 UI 및 세션 관리
@@ -203,13 +326,71 @@ if "messages" not in st.session_state:
         {"role": "assistant", "content": "안녕하세요! 제네시스 차량에 대해 궁금한 점을 물어보세요."}
     ]
 
-# 이전 대화 출력
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# 채팅창 표시 여부 상태 관리
+if "show_chat" not in st.session_state:
+    st.session_state.show_chat = False
+
+# === 사이드바 (설정 및 도움말) ===
+with st.sidebar:
+    st.title("GENESIS Assistant")
+    
+    # 탭 분리
+    tab1, tab2 = st.tabs(["가이드 💡", "대화 관리 ⚙️"])
+    
+    with tab1:
+        st.subheader("사용법")
+        st.markdown("""
+        1. **우측 하단 아이콘**을 눌러 대화를 시작하세요.
+        2. **차량 기능, 유지보수, 문제 해결**에 대해 물어보세요.
+        3. 예시:
+            - "타이어 공기압은 얼마나 넣어야 해?"
+            - "스마트 키 배터리 교체 방법 알려줘"
+            - "엔전 오일 경고등이 떴어"
+        """)
+        
+    with tab2:
+        # 대화 초기화 버튼
+        if st.button("🗑️ 대화 내용 지우기", use_container_width=True):
+            st.session_state.messages = [
+                {"role": "assistant", "content": "안녕하세요! 제네시스 차량에 대해 궁금한 점을 물어보세요."}
+            ]
+            st.rerun()
+
+    st.markdown("---")
+
+
+# 토글 버튼 (우측 하단)
+def toggle_chat():
+    st.session_state.show_chat = not st.session_state.show_chat
+
+# 채팅방이 열려있으면 X(닫기), 닫혀있으면 💬(열기) 표시
+toggle_icon = "✖" if st.session_state.get("show_chat", False) else "💬"
+st.button(toggle_icon, on_click=toggle_chat, key="toggle_chat_btn_v4")
+
+# 채팅창이 활성화된 경우에만 표시
+if st.session_state.show_chat:
+    # 이전 대화 출력
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # 입력창 표시
+    prompt = st.chat_input("질문을 입력하세요 (예: 타이어 공기압은?)")
+else:
+    prompt = None
+    # 대기 화면 안내 (선택)
+    st.markdown(
+        """
+        <div style='position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: rgba(255,255,255,0.7); pointer-events: none;'>
+            <h1 style='font-weight: 300;'>GENESIS AI</h1>
+            <p>우측 하단 아이콘을 눌러 대화를 시작하세요</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # 사용자 입력 처리
-if prompt := st.chat_input("질문을 입력하세요 (예: 타이어 공기압은?"):
+if prompt:
     # 사용자 메시지 표시 및 저장
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -218,9 +399,20 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 타이어 공기압�
     with st.chat_message("assistant"):
         with st.spinner("매뉴얼 검색 중..."):
             try:
+                # History 변환 (Dict -> BaseMessage)
+                # create_agent (LangGraph 기반)는 messages 리스트를 받아 처리합니다.
+                chat_history = []
+                for msg in st.session_state.messages:
+                   if msg["role"] == "user":
+                       chat_history.append(HumanMessage(content=msg["content"]))
+                   elif msg["role"] == "assistant":
+                       chat_history.append(AIMessage(content=msg["content"]))
+
+                # invoke 호출 (전체 히스토리 전달)
                 response = st.session_state.agent.invoke({
-                    "messages": st.session_state.messages
+                    "messages": chat_history
                 })
+                # LangGraph response는 dict이며 'messages' 키에 전체 대화가 들어있고, 마지막이 답변입니다.
                 answer = response["messages"][-1].content
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
@@ -228,7 +420,7 @@ if prompt := st.chat_input("질문을 입력하세요 (예: 타이어 공기압�
                 st.error(f"오류가 발생했습니다: {e}")
 
 # === 음성 인식 컴포넌트 (Javascript Injection via iframe) ===
-# 부모 창(Streamlit 메인 UI)의 DOM을 직접 조작하여 플로팅 버튼과 오버레이를 주입합니다.
+# 부모 창의 DOM을 직접 조작하여 플로팅 버튼과 오버레이를 주입합니다.
 # 이렇게 하면 iframe의 크기 제약 없이 전체 화면 오버레이를 구현할 수 있습니다.
 
 js_code = """
@@ -236,13 +428,19 @@ js_code = """
     (function() {
         const parentDoc = window.parent.document;
         
-        // 이미 생성되었는지 확인
-        if (parentDoc.getElementById("voice-trigger-btn")) {
-            return;
-        }
+        // === 기존 요소 제거 (재실행 시 핸들러 갱신의 핵심) ===
+        // Streamlit이 다시 실행될 때마다 새로운 iframe이 생성되는데, 
+        // 기존 버튼이 남아있으면 이전 iframe 컨텍스트의 핸들러(이미 죽은 객체)를 참조하게 됩니다.
+        // 따라서 기존 버튼을 제거하고 새로 만들어야 합니다.
+        const elementIds = ["voice-trigger-btn", "voice-overlay", "voice-custom-style"];
+        elementIds.forEach(id => {
+            const el = parentDoc.getElementById(id);
+            if (el) el.remove();
+        });
 
         // 1. CSS 스타일 주입
         const style = parentDoc.createElement("style");
+        style.id = "voice-custom-style";
         style.innerHTML = `
             #voice-trigger-btn {
                 position: fixed;
@@ -331,163 +529,6 @@ js_code = """
 
         // 4. 로직 구현
         let recognition = null;
-        if ('webkitSpeechRecognition' in window) {
-            recognition = new webkitSpeechRecognition();
-            recognition.lang = 'ko-KR';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-
-            recognition.onstart = function() {
-                overlay.style.display = 'flex';
-                parentDoc.getElementById("v-status").innerText = "말씀하세요...";
-                parentDoc.getElementById("v-ring").classList.add("active");
-            };
-
-            recognition.onend = function() {
-                overlay.style.display = 'none';
-                parentDoc.getElementById("v-ring").classList.remove("active");
-            };
-
-            recognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                
-                // Streamlit 입력창 찾기
-                const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                if (chatInput) {
-                    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                    nativeTextAreaValueSetter.call(chatInput, transcript);
-                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    
-                    // 자동 전송 (약간의 지연)
-                    setTimeout(() => {
-                        const enterEvent = new KeyboardEvent('keydown', {
-                            bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13
-                        });
-                        chatInput.dispatchEvent(enterEvent);
-                    }, 200);
-                }
-            };
-        }
-
-        // 이벤트 리스너 연결
-        btn.onclick = function() {
-            if (recognition) recognition.start();
-            else alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
-        };
-        
-        parentDoc.getElementById("v-cancel").onclick = function() {
-            if (recognition) recognition.stop();
-            overlay.style.display = 'none';
-        }
-
-    })();
-</script>
-"""
-components.html(js_code, height=0)
-# 부모 창(Streamlit 메인 UI)의 DOM을 직접 조작하여 플로팅 버튼과 오버레이를 주입합니다.
-# 이렇게 하면 iframe의 크기 제약 없이 전체 화면 오버레이를 구현할 수 있습니다.
-
-js_code = """
-<script>
-    (function() {
-        const parentDoc = window.parent.document;
-        
-        // 이미 생성되었는지 확인
-        if (parentDoc.getElementById("voice-trigger-btn")) {
-            return;
-        }
-
-        // 1. CSS 스타일 주입
-        const style = parentDoc.createElement("style");
-        style.innerHTML = `
-            #voice-trigger-btn {
-                position: fixed;
-                bottom: 100px;
-                right: 30px;
-                width: 50px;
-                height: 50px;
-                background-color: #a38b6d;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-                z-index: 999999;
-                transition: transform 0.2s, background-color 0.2s;
-            }
-            #voice-trigger-btn:hover {
-                transform: scale(1.1);
-                background-color: #b59c7d;
-            }
-            #voice-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background-color: rgba(10, 10, 10, 0.9);
-                z-index: 1000000;
-                display: none;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                gap: 20px;
-                backdrop-filter: blur(5px);
-            }
-            .voice-status {
-                color: #e5e5e5;
-                font-size: 1.5rem;
-                font-weight: 300;
-            }
-            .mic-ring {
-                width: 80px;
-                height: 80px;
-                border-radius: 50%;
-                border: 2px solid #a38b6d;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 2rem;
-                color: #a38b6d;
-            }
-            .mic-ring.active {
-                animation: pulse 1.5s infinite;
-                background-color: rgba(163, 139, 109, 0.2);
-            }
-            @keyframes pulse {
-                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0.4); }
-                70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(163, 139, 109, 0); }
-                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0); }
-            }
-        `;
-        parentDoc.head.appendChild(style);
-
-        // 2. HTML 요소 생성 (버튼)
-        const btn = parentDoc.createElement("div");
-        btn.id = "voice-trigger-btn";
-        btn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-            </svg>
-        `;
-        parentDoc.body.appendChild(btn);
-
-        // 3. HTML 요소 생성 (오버레이)
-        const overlay = parentDoc.createElement("div");
-        overlay.id = "voice-overlay";
-        overlay.innerHTML = `
-            <div class="voice-status" id="v-status">듣는 중...</div>
-            <div class="mic-ring" id="v-ring">🎤</div>
-            <button id="v-cancel" style="margin-top:20px; padding:8px 20px; border-radius:15px; border:1px solid #666; background:transparent; color:#ccc; cursor:pointer;">취소</button>
-        `;
-        parentDoc.body.appendChild(overlay);
-
-        // 4. 로직 구현
-        let recognition = null;
-        // iframe 내에서는 마이크 권한 요청이 막힐 수 있으므로, 부모 창(Main App)의 webkitSpeechRecognition을 사용
         if ('webkitSpeechRecognition' in window.parent) {
             recognition = new window.parent.webkitSpeechRecognition();
             recognition.lang = 'ko-KR';
@@ -508,14 +549,14 @@ js_code = """
             recognition.onresult = function(event) {
                 const transcript = event.results[0][0].transcript;
                 
-                // Streamlit 입력창 찾기
                 const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
                 if (chatInput) {
                     const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
                     nativeTextAreaValueSetter.call(chatInput, transcript);
                     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                     
-                    // 자동 전송 (약간의 지연)
+                    // Streamlit의 chat_input은 Enter 키 이벤트를 통해 제출됩니다.
+                    // 따라서 Enter 키 이벤트를 수동으로 발생시켜야 합니다.
                     setTimeout(() => {
                         const enterEvent = new KeyboardEvent('keydown', {
                             bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13
@@ -532,13 +573,13 @@ js_code = """
                 alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
                 return;
             }
-            // 마이크 권한 명시적 요청
+            // 마이크 권한 요청
             window.parent.navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(function(stream) {
                     recognition.start();
                 })
                 .catch(function(err) {
-                    alert("마이크 권한 오류: " + err.name + "\n브라우저 설정에서 마이크를 허용해주세요.\n(주의: localhost 또는 HTTPS 환경이어야 합니다.)");
+                    alert("마이크 권한 오류: " + err.name + "\\n브라우저 설정에서 마이크를 허용해주세요.\\n(주의: localhost 또는 HTTPS 환경이어야 합니다.)");
                 });
         };
         
