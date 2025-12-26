@@ -529,6 +529,12 @@ js_code = """
 
         // 4. 로직 구현
         let recognition = null;
+        
+        // 브라우저 호환성 및 HTTPS 확인
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            console.warn("음성 인식은 HTTPS 또는 로컬 환경에서만 작동합니다.");
+        }
+
         if ('webkitSpeechRecognition' in window.parent) {
             recognition = new window.parent.webkitSpeechRecognition();
             recognition.lang = 'ko-KR';
@@ -549,22 +555,61 @@ js_code = """
             recognition.onresult = function(event) {
                 const transcript = event.results[0][0].transcript;
                 
-                const chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                // 1. 우선적으로 data-testid로 시도
+                let chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+                
+                // 2. 실패시, 모든 textarea 중 마지막 요소 선택
+                if (!chatInput) {
+                    const allTextAreas = parentDoc.getElementsByTagName('textarea');
+                    if (allTextAreas.length > 0) {
+                        chatInput = allTextAreas[allTextAreas.length - 1];
+                    }
+                }
+
                 if (chatInput) {
-                    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                    // React 상태 업데이트를 위해 네이티브 value setter 사용
+                    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
                     nativeTextAreaValueSetter.call(chatInput, transcript);
+                    
+                    // Input 이벤트 발생
                     chatInput.dispatchEvent(new Event('input', { bubbles: true }));
                     
-                    // Streamlit의 chat_input은 Enter 키 이벤트를 통해 제출됩니다.
-                    // 따라서 Enter 키 이벤트를 수동으로 발생시켜야 합니다.
+                    // 잠시 대기 후 Enter키 전송
                     setTimeout(() => {
+                        chatInput.focus();
                         const enterEvent = new KeyboardEvent('keydown', {
                             bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13
                         });
                         chatInput.dispatchEvent(enterEvent);
-                    }, 200);
+                    }, 100);
+                } else {
+                    console.error("No textarea found in parent document.");
+                    alert("입력창을 찾을 수 없습니다. (Textarea 요소 없음)");
                 }
             };
+            
+            recognition.onerror = function(event) {
+                console.error("Speech recognition error", event.error);
+                if (event.error === 'not-allowed') {
+                    alert("마이크 사용 권한이 차단되었습니다. 브라우저 설정에서 허용해주세요.");
+                } else {
+                    // 기타 오류는 조용히 로그만 남김 (사용자 방해 최소화)
+                }
+                overlay.style.display = 'none';
+            };
+        } else {
+             console.warn("이 브라우저는 음성 인식을 지원하지 않습니다.");
+        }
+
+        function startVoiceRecognition() {
+            if (!recognition) return;
+            window.parent.navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(function(stream) {
+                    recognition.start();
+                })
+                .catch(function(err) {
+                    alert("마이크 권한 오류: " + err.name + "\\n브라우저 설정에서 마이크를 허용해주세요.\\n(주의: localhost 또는 HTTPS 환경이어야 합니다.)");
+                });
         }
 
         // 이벤트 리스너 연결
@@ -573,14 +618,27 @@ js_code = """
                 alert("이 브라우저는 음성 인식을 지원하지 않습니다.");
                 return;
             }
-            // 마이크 권한 요청
-            window.parent.navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(function(stream) {
-                    recognition.start();
-                })
-                .catch(function(err) {
-                    alert("마이크 권한 오류: " + err.name + "\\n브라우저 설정에서 마이크를 허용해주세요.\\n(주의: localhost 또는 HTTPS 환경이어야 합니다.)");
-                });
+            
+            // 1. 채팅창이 이미 열려있는지 확인
+            let chatInput = parentDoc.querySelector('textarea');
+            
+            if (chatInput) {
+                startVoiceRecognition();
+            } else {
+                // 2. 닫혀있다면 토글 버튼 클릭 (페이지 리로드 유발)
+                const buttons = Array.from(parentDoc.querySelectorAll('button'));
+                const toggleBtn = buttons.find(b => b.innerText.includes('💬'));
+                
+                if (toggleBtn) {
+                    // 리로드 후 자동 실행을 위해 sessionStorage에 플래그 저장
+                    // 중요: 리로드 후에는 버튼 클릭 없이 실행되므로 '사용자 제스처' 이슈가 있을 수 있음.
+                    // 이를 위해 사용자에게 명확한 피드백을 주는 것이 좋음.
+                    window.parent.sessionStorage.setItem("auto_start_voice", "true");
+                    toggleBtn.click();
+                } else {
+                    alert("대화창을 자동으로 열 수 없습니다.");
+                }
+            }
         };
         
         parentDoc.getElementById("v-cancel").onclick = function() {
@@ -588,6 +646,38 @@ js_code = """
             overlay.style.display = 'none';
         }
 
+        // === 페이지 리로드 후 자동 실행 체크 ===
+        if (window.parent.sessionStorage.getItem("auto_start_voice") === "true") {
+            window.parent.sessionStorage.removeItem("auto_start_voice");
+            
+            // 1. 시각적 피드백 즉시 제공
+            overlay.style.display = 'flex';
+            parentDoc.getElementById("v-status").innerText = "대화창 준비 중...";
+            
+            // 2. 안정적인 실행을 위해 1초 대기 (Streamlit 렌더링 완료 확보)
+            setTimeout(() => {
+                parentDoc.getElementById("v-status").innerText = "음성 인식을 시작합니다...";
+                startVoiceRecognition(true); // isAutoStart = true
+            }, 1000);
+        }
+
+        function startVoiceRecognition(isAutoStart = false) {
+            if (!recognition) return;
+            window.parent.navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(function(stream) {
+                    recognition.start();
+                })
+                .catch(function(err) {
+                    overlay.style.display = 'none'; // 오류 시 오버레이 숨김
+                    
+                    // 브라우저 자동 재생 정책 등으로 막혔을 경우
+                    if (isAutoStart) {
+                        alert("대화창이 열렸습니다! 마이크 버튼을 한 번 더 눌러 말씀을 시작해 주세요. (브라우저 보안)");
+                    } else {
+                        alert("마이크 권한 오류: " + err.name + "\\n브라우저 설정에서 마이크를 허용해주세요.");
+                    }
+                });
+        }
     })();
 </script>
 """
