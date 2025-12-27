@@ -188,36 +188,6 @@ st.markdown("""
         button p {
             font-size: 14px !important;
         }
-
-        /* [User Request] 사이드바 >> 메뉴 버튼 Zoom-in 방식 확대 (확실한 효과) */
-        [data-testid="stSidebarCollapsedControl"] {
-        
-            transform: scale(1.8) !important; /* 강제 1.8배 확대 */
-            transform-origin: left center !important; /* 왼쪽 기준 확대 */
-            margin-left: 15px !important;
-            margin-top: 10px !important;
-            width: auto !important;
-            height: auto !important;
-        }
-        [data-testid="stSidebarCollapsedControl"] svg {
-            /* SVG 자체 크기는 기본값 유지 후 Zoom으로 튀김 */
-            width: 40px !important;
-            height: 40px !important;
-            stroke-width: 2px !important;
-        }
-
-        /* [User Request] 특정 클래스 타겟팅 확대 (fallback) */
-        .st-emotion-cache-pd6qx2 {
-            transform: scale(1.8) !important;
-            transform-origin: left center !important;
-            
-        }
-        
-        /* [User Request] 채팅 토글 버튼 위치 조정 (마이크 버튼 아래 20px) 
-           Mic(160px) - Gap(20px) - Height(50px) = 90px */
-        div[data-testid="stButton"], div.stButton {
-            bottom: 90px !important;
-        }
     }
 
     /* 사이드바 스타일링 */
@@ -548,12 +518,6 @@ js_code = """
                 #voice-tooltip::after {
                     content: ''; position: absolute; top: 100%; left: 75%; margin-left: -6px;
                     border-width: 6px; border-style: solid; border-color: #333 transparent transparent transparent;
-                }
-                
-                /* [Mobile Adjustment] 입력창 위로 위치 상향 */
-                @media (max-width: 600px) {
-                    #voice-trigger-btn { bottom: 160px !important; }
-                    #voice-tooltip { bottom: 220px !important; }
                 }
             `;
             parentDoc.head.appendChild(style);
