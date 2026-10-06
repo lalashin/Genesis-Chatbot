@@ -13,6 +13,7 @@
 | [`devlog/`](devlog/) | 개발 일지: 한 일, **문제와 해결**, 다음 할 일 | 작업한 날마다 |
 | [`decisions/`](decisions/) | 결정 기록: 선택지, 고른 것, **이유** | 중요한 기술 선택을 할 때 |
 | [`eval/`](eval/) | 검색 품질 평가 세트와 결과 | 데이터/검색을 바꿀 때 |
+| [`analysis/`](analysis/) | 기획서 대비 구현 갭 분석 (`/pdca analyze`) | 단계 구현을 마쳤을 때 |
 | [`lessons/`](lessons/) | 교육용 차시 자료 | 단계가 끝나 정리할 때 |
 | [`templates/`](templates/) | 위 문서들의 작성 틀 | 새 문서를 만들 때 |
 
