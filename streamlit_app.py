@@ -32,7 +32,7 @@ st.markdown("""
         background-attachment: fixed;
     }
 
-    /* 모바일 반응형 배경 (index.html 참고) */
+    /* 모바일 반응형 배경 */
     @media (max-width: 768px) {
         .stApp {
             background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-mobile-750x1400.jpg');
@@ -471,240 +471,256 @@ if prompt:
 # === 음성 인식 컴포넌트 (Javascript Injection via iframe) ===
 # 부모 창의 DOM을 직접 조작하여 플로팅 버튼과 오버레이를 주입합니다.
 
+# 음성 로직은 부모 페이지에 <script>로 한 번만 설치합니다.
+# components.html iframe은 rerun(질문 전송 등)마다 새로 만들어지는데,
+# iframe 안에서 등록한 핸들러(onend, 취소 버튼 등)는 iframe이 사라지면 실행되지 않아
+# 오버레이가 닫히지 않고 취소 버튼도 동작하지 않던 문제가 있었습니다.
+# iframe은 설치와 온보딩 상태 전달만 담당합니다.
 js_code = """
 <script>
-    (function() {
-        const parentDoc = window.parent.document;
-        const btnId = "voice-trigger-btn";
-        const overlayId = "voice-overlay";
-        const tooltipId = "voice-tooltip";
-        const styleId = "voice-custom-style";
-        
-        // [State Injection]
-        const isOnboarded = IS_ONBOARDED_PLACEHOLDER;
+(function() {
+    const P = window.parent;
+    const VOICE_VERSION = 3;
 
-        // 1. CSS Injection (Idempotent)
-        if (!parentDoc.getElementById(styleId)) {
-            const style = parentDoc.createElement("style");
-            style.id = styleId;
-            style.innerHTML = `
-                #voice-trigger-btn {
-                    position: fixed; bottom: 100px; right: 30px; width: 50px; height: 50px;
-                    background-color: #a38b6d; border-radius: 50%; display: flex;
-                    align-items: center; justify-content: center; cursor: pointer;
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 999999;
-                    transition: transform 0.2s, background-color 0.2s;
-                }
-                #voice-trigger-btn:hover { transform: scale(1.1); background-color: #b59c7d; }
-                #voice-overlay {
-                    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                    background-color: rgba(10, 10, 10, 0.9); z-index: 1000000;
-                    display: none; flex-direction: column; align-items: center; justify-content: center;
-                    gap: 20px; backdrop-filter: blur(5px);
-                }
-                .voice-status { color: #e5e5e5; font-size: 1.5rem; font-weight: 300; }
-                .mic-ring {
-                    width: 80px; height: 80px; border-radius: 50%; border: 2px solid #a38b6d;
-                    display: flex; align-items: center; justify-content: center;
-                    font-size: 2rem; color: #a38b6d;
-                }
-                .mic-ring.active { animation: pulse 1.5s infinite; background-color: rgba(163, 139, 109, 0.2); }
-                @keyframes pulse {
-                    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0.4); }
-                    70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(163, 139, 109, 0); }
-                    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0); }
-                }
-                #voice-tooltip {
-                    position: fixed; bottom: 160px; right: 25px; background-color: #333; color: #fff;
-                    padding: 10px 15px; border-radius: 8px; font-size: 14px; font-weight: 500;
-                    white-space: nowrap; z-index: 999999; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-                    pointer-events: none; display: none; opacity: 0; transition: opacity 0.3s;
-                }
-                #voice-tooltip.visible { display: block; opacity: 1; }
-                #voice-tooltip::after {
-                    content: ''; position: absolute; top: 100%; left: 75%; margin-left: -6px;
-                    border-width: 6px; border-style: solid; border-color: #333 transparent transparent transparent;
-                }
-                
-                /* [Mobile Adjustment] 입력창 위로 위치 상향 */
-                @media (max-width: 600px) {
-                    #voice-trigger-btn { bottom: 160px !important; }
-                    #voice-tooltip { bottom: 220px !important; }
-                }
-            `;
-            parentDoc.head.appendChild(style);
-        }
+    function voiceMain(VOICE_VERSION) {
+        const doc = document;
+        const btnId = "voice-trigger-btn", overlayId = "voice-overlay";
+        const tooltipId = "voice-tooltip", styleId = "voice-custom-style";
 
-        // 2. DOM Elements (Ensure Existence)
-        let btn = parentDoc.getElementById(btnId);
-        if (!btn) {
-            btn = parentDoc.createElement("div");
-            btn.id = btnId;
-            btn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                </svg>
-            `;
-            parentDoc.body.appendChild(btn);
-        }
+        // 이전 버전이 설치돼 있으면 정리 후 재설치
+        [btnId, overlayId, tooltipId, styleId].forEach(id => { const el = doc.getElementById(id); if (el) el.remove(); });
+        if (window._voice_recog_instance) { try { window._voice_recog_instance.abort(); } catch (e) {} }
+        window._voice_recog_instance = null;
+        window.__voiceVersion = VOICE_VERSION;
 
-        let tooltip = parentDoc.getElementById(tooltipId);
-        if (!tooltip) {
-            tooltip = parentDoc.createElement("div");
-            tooltip.id = tooltipId;
-            tooltip.innerText = "음성 비서 활성화 하세요";
-            parentDoc.body.appendChild(tooltip);
-        }
-
-        let overlay = parentDoc.getElementById(overlayId);
-        if (!overlay) {
-            overlay = parentDoc.createElement("div");
-            overlay.id = overlayId;
-            overlay.innerHTML = `
-                <div class="voice-status" id="v-status">듣는 중...</div>
-                <div class="mic-ring" id="v-ring">🎤</div>
-                <button id="v-cancel" style="margin-top:20px; padding:8px 20px; border-radius:15px; border:1px solid #666; background:transparent; color:#ccc; cursor:pointer;">취소</button>
-            `;
-            parentDoc.body.appendChild(overlay);
-        }
-
-        // 3. Conditional UI Logic
-        if (!isOnboarded) {
-             if(tooltip) tooltip.classList.add("visible");
-        } else {
-             if(tooltip) tooltip.classList.remove("visible");
-        }
-
-        // 4. SpeechRecognition Component
-        var SpeechRecognition = window.parent.SpeechRecognition || window.parent.webkitSpeechRecognition;
-        
-        // Helper: 인스턴스 생성 및 설정 함수
-        function getOrCreateRecognition() {
-            if (!SpeechRecognition) return null;
-            if (!window.parent._voice_recog_instance) {
-                const recog = new SpeechRecognition();
-                recog.lang = 'ko-KR';
-                recog.continuous = false;
-                recog.interimResults = false;
-                window.parent._voice_recog_instance = recog;
+        // 1. CSS
+        const style = doc.createElement("style");
+        style.id = styleId;
+        style.innerHTML = `
+            #voice-trigger-btn {
+                position: fixed; bottom: 100px; right: 30px; width: 50px; height: 50px;
+                background-color: #a38b6d; border-radius: 50%; display: flex;
+                align-items: center; justify-content: center; cursor: pointer;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 999999;
+                transition: transform 0.2s, background-color 0.2s;
             }
-            // 핸들러는 항상 갱신 (Closure 갱신) for PC Overlay Fix
-            const recog = window.parent._voice_recog_instance;
-            
-            recog.onstart = function() {
-                const ov = parentDoc.getElementById(overlayId);
-                if(ov) ov.style.display = 'flex';
-                const st = parentDoc.getElementById("v-status");
-                if(st) st.innerText = "말씀하세요...";
-                const ring = parentDoc.getElementById("v-ring");
-                if(ring) ring.classList.add("active");
+            #voice-trigger-btn:hover { transform: scale(1.1); background-color: #b59c7d; }
+            #voice-overlay {
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                background-color: rgba(10, 10, 10, 0.9); z-index: 1000000;
+                display: none; flex-direction: column; align-items: center; justify-content: center;
+                gap: 20px; backdrop-filter: blur(5px);
+            }
+            .voice-status { color: #e5e5e5; font-size: 1.5rem; font-weight: 300; }
+            .mic-ring {
+                width: 80px; height: 80px; border-radius: 50%; border: 2px solid #a38b6d;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 2rem; color: #a38b6d;
+            }
+            .mic-ring.active { animation: pulse 1.5s infinite; background-color: rgba(163, 139, 109, 0.2); }
+            @keyframes pulse {
+                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0.4); }
+                70% { transform: scale(1.1); box-shadow: 0 0 0 20px rgba(163, 139, 109, 0); }
+                100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 139, 109, 0); }
+            }
+            #voice-tooltip {
+                position: fixed; bottom: 160px; right: 25px; background-color: #333; color: #fff;
+                padding: 10px 15px; border-radius: 8px; font-size: 14px; font-weight: 500;
+                white-space: nowrap; z-index: 999999; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                pointer-events: none; display: none; opacity: 0; transition: opacity 0.3s;
+            }
+            #voice-tooltip.visible { display: block; opacity: 1; }
+            #voice-tooltip::after {
+                content: ''; position: absolute; top: 100%; left: 75%; margin-left: -6px;
+                border-width: 6px; border-style: solid; border-color: #333 transparent transparent transparent;
+            }
+            /* [Mobile Adjustment] 입력창 위로 위치 상향 */
+            @media (max-width: 600px) {
+                #voice-trigger-btn { bottom: 160px !important; }
+                #voice-tooltip { bottom: 220px !important; }
+            }
+        `;
+        doc.head.appendChild(style);
+
+        // 2. DOM Elements
+        const btn = doc.createElement("div");
+        btn.id = btnId;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+            </svg>
+        `;
+        doc.body.appendChild(btn);
+
+        const tooltip = doc.createElement("div");
+        tooltip.id = tooltipId;
+        tooltip.innerText = "음성 비서 활성화 하세요";
+        doc.body.appendChild(tooltip);
+
+        const overlay = doc.createElement("div");
+        overlay.id = overlayId;
+        overlay.innerHTML = `
+            <div class="voice-status" id="v-status">듣는 중...</div>
+            <div class="mic-ring" id="v-ring">🎤</div>
+            <button id="v-cancel" style="margin-top:20px; padding:8px 20px; border-radius:15px; border:1px solid #666; background:transparent; color:#ccc; cursor:pointer;">취소</button>
+        `;
+        doc.body.appendChild(overlay);
+
+        function showOverlay(text) {
+            overlay.style.display = "flex";
+            doc.getElementById("v-status").innerText = text;
+            doc.getElementById("v-ring").classList.add("active");
+        }
+        function hideOverlay() {
+            overlay.style.display = "none";
+            doc.getElementById("v-ring").classList.remove("active");
+        }
+
+        function findChatInput() {
+            let el = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (!el) {
+                const all = doc.getElementsByTagName("textarea");
+                if (all.length > 0) el = all[all.length - 1];
+            }
+            return el;
+        }
+
+        // 3. SpeechRecognition (부모 페이지 소속이라 rerun 후에도 핸들러가 살아 있음)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        function getRecognition() {
+            if (!SpeechRecognition) return null;
+            if (window._voice_recog_instance) return window._voice_recog_instance;
+
+            const recog = new SpeechRecognition();
+            recog.lang = "ko-KR";
+            recog.continuous = false;
+            recog.interimResults = false;
+            // 모바일 Chrome 등은 interimResults=false여도 onresult를 문장이 길어질 때마다 여러 번 보냅니다.
+            // 결과마다 전송하면 "타이어", "타이어가"... 가 각각 질문으로 들어가므로
+            // 듣기 1회당 마지막 문장만 한 번 전송합니다 (onend 또는 1.2초간 새 결과가 없을 때).
+            let session = null;
+            function submitOnce() {
+                if (!session || session.submitted) return;
+                session.submitted = true;
+                clearTimeout(session.timer);
+                hideOverlay();
+                const transcript = session.transcript.trim();
+                try { recog.stop(); } catch (e) {}
+                if (!transcript) return;
+                const chatInput = findChatInput();
+                if (!chatInput) return;
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                setter.call(chatInput, transcript);
+                chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+                setTimeout(() => {
+                    chatInput.focus();
+                    chatInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13 }));
+                }, 100);
+            }
+            recog.onstart = () => {
+                session = { transcript: "", submitted: false, timer: null };
+                showOverlay("말씀하세요...");
             };
-            recog.onend = function() {
-                const ov = parentDoc.getElementById(overlayId);
-                if(ov) ov.style.display = 'none';
-                const ring = parentDoc.getElementById("v-ring");
-                if(ring) ring.classList.remove("active");
+            recog.onresult = (event) => {
+                if (!session || session.submitted) return;
+                session.transcript = event.results[event.results.length - 1][0].transcript;
+                doc.getElementById("v-status").innerText = session.transcript;
+                clearTimeout(session.timer);
+                session.timer = setTimeout(submitOnce, 1200);
             };
-            recog.onresult = function(event) {
-                const transcript = event.results[0][0].transcript;
-                let chatInput = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-                if (!chatInput) {
-                    const allTextAreas = parentDoc.getElementsByTagName('textarea');
-                    if (allTextAreas.length > 0) chatInput = allTextAreas[allTextAreas.length - 1];
-                }
-                if (chatInput) {
-                    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, "value").set;
-                    nativeTextAreaValueSetter.call(chatInput, transcript);
-                    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    setTimeout(() => {
-                        chatInput.focus();
-                        const enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13 });
-                        chatInput.dispatchEvent(enterEvent);
-                    }, 100);
-                }
+            recog.onend = () => {
+                if (session && !session.submitted) submitOnce();
+                hideOverlay();
             };
-            recog.onerror = function(event) {
-                const ov = parentDoc.getElementById(overlayId);
-                if(ov) ov.style.display = 'none';
-                // 권한 거부 시 안내
+            // 취소 시 인식 중이던 문장이 onend에서 전송되지 않도록 세션 종료
+            recog.__cancelSession = () => {
+                if (session) { session.submitted = true; clearTimeout(session.timer); }
+            };
+            recog.onerror = (event) => {
+                if (session) { session.submitted = true; clearTimeout(session.timer); }
+                hideOverlay();
                 console.warn("Voice Error:", event.error);
-                if (event.error === 'not-allowed') {
-                    // 사용자 경험상 "권한 묻기" 단계에서 거절하면 다시 안 뜨는 게 나을 수도 있음
-                }
             };
+            window._voice_recog_instance = recog;
             return recog;
         }
 
-        // 5. [NEW] Toggle Click Interceptor (토글 클릭 시 권한 선제 요청)
-        const toggleContainer = parentDoc.querySelector('div[data-testid="stToggle"]');
-        if (toggleContainer) {
-            toggleContainer.onmousedown = function() {
-                // 토글을 누르는 순간 -> 마이크 권한 요청 시도
-                if (!window.parent._voice_recog_instance) {
-                    const recog = getOrCreateRecognition();
-                    if (recog) {
-                        try {
-                            recog.start();
-                        } catch(e) { console.log("Priming error:", e); }
-                    }
-                }
-            };
+        function startListening() {
+            const recog = getRecognition();
+            if (!recog) return false;
+            try { recog.start(); } catch (e) { console.warn("Voice start error:", e); }
+            return true;
         }
 
-        // 6. Mic Button Click Handler
+        // 4. 취소: 즉시 중단하고 오버레이를 직접 닫음
+        doc.getElementById("v-cancel").onclick = function() {
+            const recog = window._voice_recog_instance;
+            if (recog) {
+                if (recog.__cancelSession) recog.__cancelSession();
+                try { recog.abort(); } catch (e) {}
+            }
+            hideOverlay();
+        };
+
+        // 5. 토글을 켤 때 마이크 권한만 미리 요청 (인식은 시작하지 않음)
+        doc.addEventListener("mousedown", function(e) {
+            if (!e.target.closest || !e.target.closest('div[data-testid="stToggle"]')) return;
+            if (window.__voiceOnboarded) return;
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => stream.getTracks().forEach(t => t.stop()))
+                    .catch(err => console.warn("Mic permission:", err));
+            }
+        }, true);
+
+        // 6. 마이크 버튼
         btn.onclick = function() {
-            if (!isOnboarded) {
-                const tt = parentDoc.getElementById(tooltipId);
-                if(tt) {
-                    tt.classList.add("visible");
-                    setTimeout(() => tt.classList.remove("visible"), 2000);
-                }
+            if (!window.__voiceOnboarded) {
+                tooltip.classList.add("visible");
+                setTimeout(() => tooltip.classList.remove("visible"), 2000);
                 return;
             }
-            
-            const recognition = getOrCreateRecognition();
-            if (!recognition) {
+            if (!SpeechRecognition) {
                 alert("음성 인식을 지원하지 않는 브라우저입니다.");
                 return;
             }
-
-            // 채팅창 확인 및 실행
-            let chatInput = parentDoc.querySelector('textarea');
-            if (chatInput) {
-                try { recognition.start(); } catch(e) { console.error(e); }
+            if (findChatInput()) {
+                startListening();
             } else {
-                 const buttons = Array.from(parentDoc.querySelectorAll('button'));
-                 const toggleBtn = buttons.find(b => b.innerText.includes('💬'));
-                 if (toggleBtn) {
-                     window.parent.sessionStorage.setItem("auto_start_voice", "true");
-                     toggleBtn.click();
-                 }
+                // 채팅창이 닫혀 있으면 열고, rerun 후 자동으로 듣기 시작
+                const toggleBtn = Array.from(doc.querySelectorAll("button")).find(b => b.innerText.includes("💬"));
+                if (toggleBtn) {
+                    window.sessionStorage.setItem("auto_start_voice", "true");
+                    toggleBtn.click();
+                }
             }
         };
 
-        const cancelBtn = parentDoc.getElementById("v-cancel");
-        if(cancelBtn) {
-            cancelBtn.onclick = function() {
-                const recognition = window.parent._voice_recog_instance;
-                if (recognition) recognition.stop();
-            };
-        }
-        
-        // 자동 실행 체크 (페이지 로드 후)
-        if (window.parent.sessionStorage.getItem("auto_start_voice") === "true") {
-            window.parent.sessionStorage.removeItem("auto_start_voice");
-            setTimeout(() => {
-                const recognition = getOrCreateRecognition();
-                 if(recognition) {
-                    let chatInput = parentDoc.querySelector('textarea');
-                    if (chatInput) try { recognition.start(); } catch(e) {}
-                 }
-            }, 1000);
-        }
+        // 7. rerun마다 iframe이 호출: 온보딩 상태 반영 + 자동 듣기 처리
+        window.__voiceSync = function() {
+            tooltip.classList.toggle("visible", !window.__voiceOnboarded);
+            if (window.sessionStorage.getItem("auto_start_voice") === "true") {
+                window.sessionStorage.removeItem("auto_start_voice");
+                let tries = 0;
+                const timer = setInterval(() => {
+                    tries++;
+                    if (findChatInput()) { clearInterval(timer); startListening(); }
+                    else if (tries > 30) clearInterval(timer);
+                }, 100);
+            }
+        };
+    }
 
-    })();
+    if (P.__voiceVersion !== VOICE_VERSION) {
+        const s = P.document.createElement("script");
+        s.textContent = "(" + voiceMain.toString() + ")(" + VOICE_VERSION + ");";
+        P.document.head.appendChild(s);
+    }
+    P.__voiceOnboarded = IS_ONBOARDED_PLACEHOLDER;
+    P.__voiceSync();
+})();
 </script>
 """
 js_code = js_code.replace("IS_ONBOARDED_PLACEHOLDER", str(st.session_state.voice_onboarded).lower())
