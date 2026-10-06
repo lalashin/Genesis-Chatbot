@@ -12,6 +12,7 @@ PDF나 분할 설정을 바꿨다면 chroma_db/ 폴더를 지우고 처음부터
 (청크 ID가 순번이라 그대로 이어서 실행하면 이전 내용과 섞입니다.)
 """
 import os
+import re
 import time
 
 from dotenv import load_dotenv
@@ -56,6 +57,8 @@ def main():
             except Exception as e:
                 msg = str(e)
                 if "PerDay" in msg or attempt == MAX_RETRIES:
+                    quota_ids = re.findall(r"'quotaId': '([^']+)'", msg)
+                    print(f"  오류: {quota_ids or msg[:200]}")
                     raise SystemExit("일일 무료 한도에 도달했습니다. 내일 다시 실행하면 이어서 진행합니다.")
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
                     print("  분당 한도 초과 - 60초 대기 후 재시도")
