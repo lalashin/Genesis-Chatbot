@@ -1,5 +1,7 @@
 # GENESIS AI Assistant
 
+🔗 **배포 링크**: https://genesis-chatbot.streamlit.app/
+
 제네시스 차량 매뉴얼(PDF, 767페이지)을 기반으로 질문에 답하는 **RAG 챗봇**입니다.
 "AI Agent 개발을 위한 데이터 구축 전문가 과정"에서 처음으로 만들고 Streamlit Cloud에 배포한 실습 프로젝트입니다.
 
