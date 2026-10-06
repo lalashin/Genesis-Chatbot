@@ -1,0 +1,53 @@
+/* 테마로 표현할 수 없는 부분만 CSS로 남겼습니다. (색·폰트는 .streamlit/config.toml)
+   위젯은 key 기반 클래스(.st-key-...)로만 지정해 Streamlit 내부 구조 변화에 덜 깨지게 했습니다. */
+
+/* 배경 이미지 (PC / 모바일) */
+.stApp {
+    background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+        url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-desktop-2560x900.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}
+@media (max-width: 768px) {
+    .stApp {
+        background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+            url('https://www.genesis.com/content/dam/genesis-p2/kr/assets/main/hero/genesis-kr-main-kv-g90-lwb-black-main-hero-mobile-750x1400.jpg');
+    }
+}
+
+/* 상단 헤더 투명 */
+header[data-testid="stHeader"] { background-color: transparent; }
+
+/* 제목 그라데이션 */
+h1 {
+    background: linear-gradient(to right, #fff, #a38b6d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 300 !important;
+}
+
+/* 우측 하단 채팅 열기/닫기 버튼 (key="chat_toggle" 인 버튼만) */
+.st-key-chat_toggle {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 9999;
+    width: auto;
+}
+.st-key-chat_toggle button {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+@media (max-width: 600px) {
+    .st-key-chat_toggle { bottom: 100px; right: 16px; }
+}
+
+/* 대기 화면 안내 문구 */
+.welcome {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; color: rgba(255, 255, 255, 0.75); pointer-events: none;
+}
+.welcome h2 { font-weight: 300; }

@@ -39,3 +39,6 @@ dist/
 # 미리 생성한 Gemini 벡터 DB는 배포에 필요하므로 커밋 (build_vectorstore.py 로 생성)
 !chroma_db/
 !chroma_db/**
+
+# Streamlit 비밀값 (API 키)
+.streamlit/secrets.toml

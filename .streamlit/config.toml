@@ -1,0 +1,13 @@
+# 앱 테마: 예전에는 CSS로 색을 하나하나 덮어썼지만, Streamlit 기본 테마 설정으로 옮겼습니다.
+[theme]
+base = "dark"
+primaryColor = "#a38b6d"            # 제네시스 골드
+backgroundColor = "#0a0a0a"
+secondaryBackgroundColor = "#1e1e1e"
+textColor = "#e5e5e5"
+borderColor = "#333333"
+font = "'Noto Sans KR':https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap"
+headingFont = "Outfit:https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap"
+
+[theme.sidebar]
+backgroundColor = "#1e1e1e"

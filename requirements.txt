@@ -1,10 +1,22 @@
-pypdf
+# Pinned to versions verified locally (keep this file ASCII-only:
+# pip on Windows reads it with the system code page, e.g. cp949).
+# chromadb must stay pinned: the committed chroma_db/ file format depends on it.
+
+# UI
+streamlit==1.64.0
+
+# LLM / agent
+langchain==1.4.3
+langchain-core==1.6.6
+langchain-google-genai==4.4.0
+google-genai==2.25.0
+
+# Vector DB
 chromadb==1.5.9
-langchain
-langchain-community
-langchain-google-genai
 langchain-chroma==1.1.0
-langchain-core
-python-dotenv
-streamlit
-watchdog
+
+# Building the vector DB (build_vectorstore.py): PDF loading / splitting
+langchain-community==0.4.2
+pypdf==6.19.0
+
+python-dotenv==1.2.3
