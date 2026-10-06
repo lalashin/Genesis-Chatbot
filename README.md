@@ -53,6 +53,7 @@ Gemini 무료 티어는 임베딩 요청이 **분당 100회 / 하루 1,000회**�
 ├── agent.py               # 답변 에이전트, 스트리밍, 오류 안내
 ├── retrieval.py           # 매뉴얼 검색 (벡터 + 키워드 대체 검색)
 ├── voice.py               # 음성 받아쓰기 (Gemini + 차량 용어 힌트)
+├── errors.py              # Gemini 오류 분류 (한도 초과·일시 장애 등)
 ├── vectorstore_config.py  # 임베딩 모델 / 벡터 DB 경로 공통 설정
 ├── build_vectorstore.py   # PDF → chroma_db/ 생성 스크립트 (1회 실행)
 ├── styles.css             # 배경 이미지 등 테마로 못 하는 스타일
@@ -61,6 +62,7 @@ Gemini 무료 티어는 임베딩 요청이 **분당 100회 / 하루 1,000회**�
 ├── Genesis_2026.pdf       # 원본 매뉴얼
 ├── requirements.txt       # 버전 고정 (ASCII만 사용: Windows pip 인코딩 문제)
 ├── eval/                  # 검색·받아쓰기 평가 스크립트와 평가 세트
+├── tests/                 # API 없이 도는 단위 테스트 (python -m pytest tests)
 ├── docs/                  # 제작 과정 기록 (기획서, 개발 일지, 결정 기록, 평가 결과)
 └── practice/              # 교육 과정 실습 코드 (OpenAI 기반 초기 버전, 참고용)
     ├── 01_pdf_embedding.py   # PDF 로드 → 분할 → 임베딩 → Chroma 저장
