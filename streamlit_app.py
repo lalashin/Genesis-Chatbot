@@ -70,7 +70,6 @@ def toggle_chat():
 
 def clear_chat():
     st.session_state.messages = [GREETING]
-    st.session_state.suggestion = None  # 예시 질문 선택이 남아 다시 전송되지 않도록
 
 
 # === 4. 화면 상단 ===
@@ -128,11 +127,19 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
         render_sources(msg.get("sources"))
 
-prompt = None
-if len(st.session_state.messages) == 1:  # 첫 질문 전에만 예시 질문 표시
-    picked = st.pills("예시 질문", list(SUGGESTIONS), label_visibility="collapsed", key="suggestion")
+def pick_suggestion():
+    # 고른 질문을 꺼내고 선택은 바로 지웁니다. 선택이 남아 있으면 답변이 실패했을 때
+    # 이후 아무 rerun에서나 같은 질문이 반복 전송됩니다.
+    picked = st.session_state.suggestion
+    st.session_state.suggestion = None
     if picked:
-        prompt = SUGGESTIONS[picked]
+        st.session_state.pending_prompt = SUGGESTIONS[picked]
+
+
+prompt = st.session_state.pop("pending_prompt", None)
+if len(st.session_state.messages) == 1:  # 첫 질문 전에만 예시 질문 표시
+    st.pills("예시 질문", list(SUGGESTIONS), label_visibility="collapsed", key="suggestion",
+             on_change=pick_suggestion)
 
 if st.session_state.voice_notice:
     st.info(st.session_state.voice_notice, icon=":material/mic:")

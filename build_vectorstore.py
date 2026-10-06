@@ -12,7 +12,6 @@ PDF나 분할 설정을 바꿨다면 chroma_db/ 폴더를 지우고 처음부터
 (청크 ID가 순번이라 그대로 이어서 실행하면 이전 내용과 섞입니다.)
 """
 import os
-import re
 import time
 
 from dotenv import load_dotenv
@@ -20,6 +19,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
+from errors import classify, quota_ids
 from vectorstore_config import PDF_PATH, PERSIST_DIR, get_embeddings
 
 BATCH_SIZE = 20          # 한 번에 임베딩할 청크 수
@@ -55,16 +55,14 @@ def main():
                 vectorstore.add_documents([d for _, d in batch], ids=[i for i, _ in batch])
                 break
             except Exception as e:
-                msg = str(e)
-                if "PerDay" in msg or attempt == MAX_RETRIES:
-                    quota_ids = re.findall(r"'quotaId': '([^']+)'", msg)
-                    print(f"  오류: {quota_ids or msg[:200]}")
+                kind = classify(e)
+                if kind not in ("quota_day", "quota_minute", "unavailable"):
+                    raise  # 한도·일시 장애가 아닌 오류는 그대로 보여줌
+                if kind == "quota_day" or attempt == MAX_RETRIES:
+                    print(f"  오류: {quota_ids(e) or str(e)[:200]}")
                     raise SystemExit("일일 무료 한도에 도달했습니다. 내일 다시 실행하면 이어서 진행합니다.")
-                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    print("  분당 한도 초과 - 60초 대기 후 재시도")
-                    time.sleep(60)
-                    continue
-                raise
+                print("  분당 한도 초과/일시 장애 - 60초 대기 후 재시도")
+                time.sleep(60)
         finished = len(done) + start + len(batch)
         print(f"  {finished}/{len(splits)} 완료")
         time.sleep(delay)

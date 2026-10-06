@@ -28,14 +28,16 @@ PLAIN_PROMPT = "이 한국어 녹음을 그대로 받아쓰세요. 받아쓴 문
 
 
 def synthesize(text: str, path: str):
+    # 문장·경로는 명령 문자열에 끼워 넣지 않고 환경변수로 넘깁니다 (따옴표가 있어도 안전)
     ps = (
         "Add-Type -AssemblyName System.Speech;"
         "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
         "$s.SelectVoice('Microsoft Heami Desktop');"
-        f"$s.SetOutputToWaveFile('{path}');"
-        f"$s.Speak('{text}'); $s.Dispose()"
+        "$s.SetOutputToWaveFile($env:TTS_PATH);"
+        "$s.Speak($env:TTS_TEXT); $s.Dispose()"
     )
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
+    env = {**os.environ, "TTS_TEXT": text, "TTS_PATH": path}
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, env=env)
 
 
 def plain_transcribe(audio: bytes) -> str:

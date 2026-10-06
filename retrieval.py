@@ -11,10 +11,12 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass
+from functools import cached_property
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
+from errors import is_quota_or_unavailable
 from vectorstore_config import PERSIST_DIR, get_embeddings
 
 
@@ -29,6 +31,12 @@ def _bigrams(text: str) -> list[str]:
     return [s[i:i + 2] for i in range(len(s) - 1)]
 
 
+def _query_terms(query: str) -> set[str]:
+    # '휠'처럼 한 글자 질의는 bigram이 없으므로 글자 단위로 찾습니다
+    s = re.sub(r"\s+", "", query.lower())
+    return set(_bigrams(s)) if len(s) >= 2 else set(s)
+
+
 class KeywordIndex:
     """글자 bigram 기반 BM25 검색 (API 호출 없음)."""
 
@@ -37,7 +45,7 @@ class KeywordIndex:
         self.k1, self.b = k1, b
         self.tfs = [Counter(_bigrams(d.page_content)) for d in docs]
         self.lens = [sum(tf.values()) for tf in self.tfs]
-        self.avg_len = sum(self.lens) / max(len(self.lens), 1)
+        self.avg_len = max(sum(self.lens) / max(len(self.lens), 1), 1.0)  # 빈 문서만 있어도 0으로 나누지 않게
         df = Counter()
         for tf in self.tfs:
             df.update(tf.keys())
@@ -45,7 +53,12 @@ class KeywordIndex:
         self.idf = {t: math.log(1 + (n - c + 0.5) / (c + 0.5)) for t, c in df.items()}
 
     def search(self, query: str, k: int = 3) -> list[Document]:
-        terms = set(_bigrams(query))
+        terms = _query_terms(query)
+        if len(terms) == 1 and len(next(iter(terms), "")) == 1:  # 한 글자 질의: 단순 포함 횟수
+            ch = next(iter(terms))
+            counts = [d.page_content.count(ch) for d in self.docs]
+            top = sorted(range(len(counts)), key=counts.__getitem__, reverse=True)[:k]
+            return [self.docs[i] for i in top if counts[i] > 0]
         scores = []
         for i, tf in enumerate(self.tfs):
             score = 0.0
@@ -53,7 +66,7 @@ class KeywordIndex:
             for t in terms:
                 f = tf.get(t)
                 if f:
-                    score += self.idf[t] * f * (self.k1 + 1) / (f + norm)
+                    score += self.idf.get(t, 0.0) * f * (self.k1 + 1) / (f + norm)
             scores.append(score)
         top = sorted(range(len(scores)), key=scores.__getitem__, reverse=True)[:k]
         return [self.docs[i] for i in top if scores[i] > 0]
@@ -62,9 +75,13 @@ class KeywordIndex:
 class ManualRetriever:
     def __init__(self, persist_dir: str = PERSIST_DIR):
         self.vectorstore = Chroma(persist_directory=persist_dir, embedding_function=get_embeddings())
+
+    @cached_property
+    def keyword(self) -> KeywordIndex:
+        # 대체 검색이 처음 필요할 때만 만듭니다 (정상 경로에서는 시작 시간·메모리를 쓰지 않음)
         raw = self.vectorstore.get(include=["documents", "metadatas"])
-        self.keyword = KeywordIndex(
-            [Document(page_content=t, metadata=m or {}) for t, m in zip(raw["documents"], raw["metadatas"])]
+        return KeywordIndex(
+            [Document(page_content=t or "", metadata=m or {}) for t, m in zip(raw["documents"], raw["metadatas"])]
         )
 
     def search(self, query: str, k: int = 3, force_keyword: bool = False) -> SearchResult:
@@ -76,11 +93,6 @@ class ManualRetriever:
                 if not is_quota_or_unavailable(e):
                     raise
         return SearchResult(self.keyword.search(query, k=k), "keyword")
-
-
-def is_quota_or_unavailable(e: Exception) -> bool:
-    msg = str(e)
-    return any(s in msg for s in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE"))
 
 
 def page_label(doc: Document) -> int | None:
