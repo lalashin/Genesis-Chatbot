@@ -3,10 +3,9 @@ import streamlit.components.v1 as components
 import os
 import time
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
+from vectorstore_config import PERSIST_DIR, get_embeddings
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.messages import ChatMessage, HumanMessage, AIMessage, SystemMessage
@@ -296,58 +295,30 @@ st.title("GENESIS AI Assistant")
 
 # 1. API Key 설정 (Streamlit Secrets 우선, 없으면 로컬 .env)
 try:
-    if "OPENAI_API_KEY" in st.secrets:
-        os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+    if "GOOGLE_API_KEY" in st.secrets:
+        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 except Exception:
     # 로컬 환경 등 secrets가 없는 경우 무시
     pass
 
 # 환경 변수가 없으면 .env 로드 시도
-if not os.getenv("OPENAI_API_KEY"):
+if not os.getenv("GOOGLE_API_KEY"):
     load_dotenv()
 
 # API 키 확인
-if not os.getenv("OPENAI_API_KEY"):
-    st.error("OPENAI_API_KEY가 설정되지 않았습니다. Streamlit Secrets 또는 .env 파일을 확인해주세요.")
+if not os.getenv("GOOGLE_API_KEY"):
+    st.error("GOOGLE_API_KEY가 설정되지 않았습니다. Streamlit Secrets 또는 .env 파일을 확인해주세요.")
     st.stop()
 
-# 2. 리소스 캐싱 (PDF 로드 및 벡터 DB 생성은 한 번만 실행)
+# 2. 리소스 캐싱 (미리 만들어 둔 벡터 DB를 한 번만 로드)
+# Gemini 무료 티어는 임베딩 요청이 분당 100회라 앱에서 PDF 전체를 임베딩하면 429가 나므로,
+# build_vectorstore.py 로 만든 chroma_db/ 를 불러오기만 합니다.
 @st.cache_resource
 def initialize_vector_store():
-    with st.spinner("매뉴얼을 로딩하고 분석 중입니다... (최초 1회만 실행됨)"):
-        # PDF 파일 경로
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(current_dir, "Genesis_2026.pdf")
-        
-        if not os.path.exists(file_path):
-            st.error(f"매뉴얼 파일이 없습니다: {file_path}")
-            st.stop()
-
-        # PDF 로드
-        loader = PyPDFLoader(file_path)
-        docs = loader.load()
-
-        # 문서 분할
-        text_splitter = RecursiveCharacterTextSplitter(
-            separators=["\\n\\n", "\\n", ".", " "],
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len
-        )
-        splits = text_splitter.split_documents(docs)
-
-        # 임베딩 모델
-        embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            dimensions=1536,
-        )
-
-        # 인메모리 벡터 저장소 생성
-        vectorstore = Chroma.from_documents(
-            documents=splits,
-            embedding=embeddings
-        )
-        return vectorstore
+    if not os.path.exists(PERSIST_DIR):
+        st.error(f"벡터 DB가 없습니다: {PERSIST_DIR}\n\n`python build_vectorstore.py`를 먼저 실행해주세요.")
+        st.stop()
+    return Chroma(persist_directory=PERSIST_DIR, embedding_function=get_embeddings())
 
 # 벡터 스토어 초기화
 vectorstore = initialize_vector_store()
@@ -361,8 +332,8 @@ def search_manual(query: str):
     if not retrieved_docs:
         return "관련 정보를 찾을 수 없습니다."
     
-    serialized = "\\n\\n".join(
-        f"[페이지 {doc.metadata.get('page', 'N/A')}]\\n{doc.page_content}"
+    serialized = "\n\n".join(
+        f"[페이지 {doc.metadata.get('page', 'N/A')}]\n{doc.page_content}"
         for doc in retrieved_docs
     )
     return serialized
@@ -381,13 +352,13 @@ def get_chat_history(messages):
 
 # LLM & Agent 설정
 if "agent" not in st.session_state:
-    model = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+    model = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", temperature=0.2)
     tools = [search_manual]
     
     system_prompt = (
-        "당신은 현대자동차 제네시스 매뉴얼 전문가입니다.\\n"
-        "사용자의 질문에 친절하고 전문적으로 답변해주세요.\\n"
-        "특히 안전과 관련된 내용은 반드시 강조해서 설명해주세요.\\n"
+        "당신은 현대자동차 제네시스 매뉴얼 전문가입니다.\n"
+        "사용자의 질문에 친절하고 전문적으로 답변해주세요.\n"
+        "특히 안전과 관련된 내용은 반드시 강조해서 설명해주세요.\n"
         "매뉴얼을 검색할 때는 search_manual 도구를 사용하세요."
     )
 
@@ -486,10 +457,15 @@ if prompt:
                     "messages": chat_history
                 })
                 # LangGraph response는 dict이며 'messages' 키에 전체 대화가 들어있고, 마지막이 답변입니다.
-                answer = response["messages"][-1].content
+                answer = response["messages"][-1].text
+                # Gemini가 빈 답변을 주면 히스토리에 빈 메시지가 쌓여 다음 요청이 400으로 실패하므로 대체 문구로 저장
+                if not answer.strip():
+                    answer = "답변을 생성하지 못했습니다. 질문을 조금 바꿔서 다시 물어봐 주세요."
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
+                # 실패한 질문을 히스토리에서 빼서 user 메시지가 연속으로 쌓이지 않게 함
+                st.session_state.messages.pop()
                 st.error(f"오류가 발생했습니다: {e}")
 
 # === 음성 인식 컴포넌트 (Javascript Injection via iframe) ===

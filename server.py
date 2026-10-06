@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import os
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
+from vectorstore_config import PERSIST_DIR, get_embeddings
 from langchain.agents import create_agent
 from langchain.tools import tool
 
@@ -16,10 +17,8 @@ from langchain.tools import tool
 load_dotenv()
 
 # API 키 확인
-if not os.getenv("OPENAI_API_KEY"):
-    print("경고: .env 파일에서 OPENAI_API_KEY를 찾을 수 없습니다. 시스템 환경 변수를 확인하세요.")
-    if not os.getenv("OPENAI_API_KEY"):
-         raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+if not os.getenv("GOOGLE_API_KEY"):
+    raise ValueError("GOOGLE_API_KEY가 설정되지 않았습니다. .env 파일 또는 시스템 환경 변수를 확인하세요.")
 
 app = FastAPI()
 
@@ -35,43 +34,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === 임베딩 & 벡터DB 초기화 (In-Memory) ===
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+# === 벡터DB 로드 (build_vectorstore.py 로 미리 생성) ===
+if not os.path.exists(PERSIST_DIR):
+    raise FileNotFoundError(f"벡터 DB가 없습니다: {PERSIST_DIR} - python build_vectorstore.py 를 먼저 실행하세요.")
 
-# 1. PDF 로드
-current_dir = os.path.dirname(os.path.abspath(__file__))
-file_path = os.path.join(current_dir, "Genesis_2026.pdf")
-
-if not os.path.exists(file_path):
-    raise FileNotFoundError(f"매뉴얼 파일이 없습니다: {file_path}")
-
-print("매뉴얼 로딩 및 임베딩 중... (서버 시작 시 약 10~20초 소요됩니다)")
-loader = PyPDFLoader(file_path)
-docs = loader.load()
-
-# 2. 문서 분할
-text_splitter = RecursiveCharacterTextSplitter(
-    separators=["\n\n", "\n", ".", " "],
-    chunk_size=1000,
-    chunk_overlap=200,
-    length_function=len
-)
-splits = text_splitter.split_documents(docs)
-
-# 3. 임베딩 모델
-embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    dimensions=1536,
-)
-
-# 4. 벡터 저장소 생성 (In-Memory)
-# persist_directory를 지정하지 않으면 메모리에만 저장됨
-vectorstore = Chroma.from_documents(
-    documents=splits,
-    embedding=embeddings
-)
-print("매뉴얼 임베딩 완료!")
+vectorstore = Chroma(persist_directory=PERSIST_DIR, embedding_function=get_embeddings())
 
 # === 검색 Tool 정의 ===
 @tool(response_format="content_and_artifact")
@@ -93,8 +60,8 @@ def search_manual(query: str):
     return serialized, retrieved_docs
 
 # === LLM + Agent 설정 ===
-model = ChatOpenAI(
-    model="gpt-4o",
+model = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite",
     temperature=0.2
 )
 
@@ -134,7 +101,10 @@ async def chat(request: Question):
         
         # 최종 답변 출력
         final_message = result["messages"][-1]
-        return {"answer": final_message.content}
+        answer = final_message.text
+        if not answer.strip():
+            answer = "답변을 생성하지 못했습니다. 질문을 조금 바꿔서 다시 물어봐 주세요."
+        return {"answer": answer}
 
     except Exception as e:
         print(f"Error: {e}")
