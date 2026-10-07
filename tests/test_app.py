@@ -155,3 +155,15 @@ def test_story_dialog_opens_without_error(monkeypatch):
     at.button(key="story_link").click().run()
     assert not at.exception
     assert any("음성 받아쓰기 정확도" in m.label for m in at.metric)
+
+
+def test_theory_tabs_render(monkeypatch):
+    """임베딩 원리·AI 설정 탭: 실제 시스템 프롬프트를 settings.py에서 그대로 보여 주고, 차트가 그려짐."""
+    import settings
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="story_link").click().run()
+    assert not at.exception
+    assert any(settings.SYSTEM_PROMPT in c.value for c in at.code)  # 페르소나 원문 그대로
+    assert at.get("arrow_vega_lite_chart") or at.get("vega_lite_chart")  # 유사도 히트맵

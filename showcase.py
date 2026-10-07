@@ -3,12 +3,15 @@
 
 앱 제목 아래 작은 링크로 열며, 세 가지를 보여 줍니다.
 - 작동 원리: 질문이 답변이 되기까지 (순서도)
+- 임베딩 원리 / AI 설정·페르소나: showcase_theory.py
 - 개발 여정: 단계별로 겪은 문제와 해결
 - 개선 효과: 측정한 전후 수치 (숫자 타일)
 
 수치는 docs/eval/ 의 측정 결과에서 가져왔습니다. 다시 측정하면 여기 값도 갱신하세요.
 """
 import streamlit as st
+
+from showcase_theory import render_embedding_tab, render_persona_tab
 
 REPO_DOCS = "https://github.com/lalashin/Genesis-Chatbot/tree/master/docs"
 
@@ -45,8 +48,10 @@ JOURNEY_TABLE = """
 
 @st.dialog("개발 과정 한눈에 보기", width="large", icon=":material/account_tree:")
 def show_story():
-    how, journey, impact = st.tabs([
+    how, embedding, persona, journey, impact = st.tabs([
         ":material/route: 작동 원리",
+        ":material/scatter_plot: 임베딩 원리",
+        ":material/badge: AI 설정·페르소나",
         ":material/history: 개발 여정",
         ":material/trending_up: 개선 효과",
     ])
@@ -57,6 +62,12 @@ def show_story():
         st.markdown("**미리 해 두는 준비 (한 번만)**")
         st.mermaid_chart(DATA_PREP)
         st.caption("매뉴얼을 미리 숫자(벡터)로 바꿔 두면, 질문이 들어올 때 뜻이 비슷한 부분을 바로 찾을 수 있습니다.")
+
+    with embedding:
+        render_embedding_tab()
+
+    with persona:
+        render_persona_tab()
 
     with journey:
         st.mermaid_chart(JOURNEY)
