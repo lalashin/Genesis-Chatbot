@@ -2,6 +2,10 @@
 
 🔗 **배포 링크**: https://genesis-chatbot.streamlit.app/
 
+📘 **강의 활용 가이드**: [docs/lessons/GUIDE.md](docs/lessons/GUIDE.md) — 시연 대본, 상황별 활용법, 교육 사례, 단계별 코드(태그)
+
+📊 **완료 보고서**: [docs/report/demo-upgrade.report.md](docs/report/demo-upgrade.report.md)
+
 제네시스 차량 매뉴얼(PDF, 767페이지)을 기반으로 질문에 답하는 **RAG 챗봇**입니다.
 "AI Agent 개발을 위한 데이터 구축 전문가 과정"에서 처음으로 만들고 Streamlit Cloud에 배포한 실습 프로젝트입니다.
 

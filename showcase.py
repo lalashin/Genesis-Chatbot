@@ -14,6 +14,7 @@ import streamlit as st
 from showcase_theory import render_embedding_tab, render_persona_tab
 
 REPO_DOCS = "https://github.com/lalashin/Genesis-Chatbot/tree/master/docs"
+GUIDE_URL = "https://github.com/lalashin/Genesis-Chatbot/blob/master/docs/lessons/GUIDE.md"
 
 HOW_IT_WORKS = """
 flowchart LR
@@ -92,4 +93,6 @@ def show_story():
                       help="호출이 줄어 무료 사용 한도도 2~3배 여유가 생김")
         st.caption("측정 기록: docs/eval/ · 로컬 PC 기준이며 배포 서버에서는 네트워크에 따라 조금 더 걸릴 수 있습니다.")
 
-    st.link_button("전체 개발 기록 보기 (GitHub)", REPO_DOCS, icon=":material/open_in_new:", type="tertiary")
+    with st.container(horizontal=True):
+        st.link_button("전체 개발 기록 보기 (GitHub)", REPO_DOCS, icon=":material/open_in_new:", type="tertiary")
+        st.link_button("강의 활용 가이드", GUIDE_URL, icon=":material/school:", type="tertiary")
