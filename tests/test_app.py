@@ -146,3 +146,12 @@ def test_daily_quota_notice(monkeypatch):
     at.chat_input[0].set_value("질문").run()
     assert not at.exception
     assert any("내일" in e.value for e in at.error)
+
+
+def test_story_dialog_opens_without_error(monkeypatch):
+    """'개발 과정 보기' 링크 → 팝업(순서도·표·수치 타일)이 오류 없이 열림."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="story_link").click().run()
+    assert not at.exception
+    assert any("음성 받아쓰기 정확도" in m.label for m in at.metric)

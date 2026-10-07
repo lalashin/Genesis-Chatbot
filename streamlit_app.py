@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from agent import build_assistant, clean_markdown, friendly_error, sources_of
 from retrieval import ManualRetriever
 from settings import VOICE_AUTO_SEND
+from showcase import show_story
 from vectorstore_config import PERSIST_DIR
 from voice import transcribe
 
@@ -78,6 +79,9 @@ st.toggle(
     key="voice_enabled",
 )
 st.title("GENESIS AI Assistant")
+# 데모·교육용: 개발 과정을 순서도·수치로 보여 주는 팝업 (showcase.py)
+if st.button("개발 과정 보기", type="tertiary", icon=":material/account_tree:", key="story_link"):
+    show_story()
 
 with st.sidebar:
     st.title("GENESIS Assistant")
