@@ -2,9 +2,13 @@
 
 단계별 주요 변경 사항입니다. 자세한 과정은 [`docs/devlog/`](docs/devlog/)를 참고하세요.
 
-## [13] 2026-10-07 — 임베딩 원리·페르소나 탭, 완료 보고서, 강의 활용 가이드
-- 강의 활용 가이드(`docs/lessons/GUIDE.md`), 단계별 git 태그(`v01`~`v13`)
-- 완료 보고서(`docs/report/demo-upgrade.report.md`)
+## [14] 2026-10-08 — 마무리 정리
+- 완료 보고서(`docs/report/demo-upgrade.report.md`), 강의 활용 가이드(`docs/lessons/GUIDE.md`)
+- 단계별 git 태그 `v01-first-rag` ~ `v13-theory-tabs`
+- README 상단에 강의 활용 가이드 링크
+- 개발 일지와 다음 할 일(백로그): `docs/devlog/2026-10-08_report-guide-tags.md`
+
+## [13] 2026-10-07 — 임베딩 원리·페르소나 탭
 - 개발 과정 보기에 "임베딩 원리"(질문×매뉴얼 유사도 히트맵, 키워드 vs 임베딩, 직접 해 보기)와 "AI 설정·페르소나"(실제 시스템 프롬프트, 규칙별 이유, 설정값) 탭 추가
 
 ## [12] 2026-10-07 — 개발 과정 보기
