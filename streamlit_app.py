@@ -88,14 +88,15 @@ with st.sidebar:
             """
 1. **우측 하단 버튼**을 눌러 대화를 시작하세요.
 2. **차량 기능, 유지보수, 문제 해결**에 대해 물어보세요.
-3. **음성 질문**: 입력창의 :material/mic: 버튼으로 녹음 → 받아쓴 문장을 확인하고 전송하세요.
+3. **음성 질문**: 입력창의 :material/mic: 버튼으로 녹음하면 받아쓴 문장으로 바로 질문합니다.
+   (사이드바 '대화 관리'에서 확인 후 전송으로 바꿀 수 있어요)
 4. 답변 아래 **참고한 매뉴얼 페이지**가 표시됩니다.
 """
         )
     with manage_tab:
         st.button("대화 내용 지우기", icon=":material/delete:", on_click=clear_chat, width="stretch")
         st.toggle("받아쓴 문장 바로 전송", value=VOICE_AUTO_SEND, key="voice_auto_send",
-                  help="끄면 받아쓴 문장을 입력창에 넣어 확인 후 전송합니다.")
+                  help="끄면 받아쓴 문장을 입력창에 넣고, 확인한 뒤 전송합니다 (정확한 질문이 중요한 수업용).")
 
 st.button(
     "",
@@ -104,6 +105,12 @@ st.button(
     on_click=toggle_chat,
     help="대화창 닫기" if st.session_state.show_chat else "대화 시작",
 )
+
+
+def render_voice_badge(msg: dict):
+    # 음성 질문은 AI가 받아쓴 문장을 그대로 보여 주고 표시를 붙입니다 (무엇을 알아들었는지 확인용)
+    if msg.get("voice"):
+        st.caption(":material/mic: 음성 질문 (받아쓴 문장)")
 
 
 def render_sources(sources: dict | None):
@@ -125,6 +132,7 @@ if not st.session_state.show_chat:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        render_voice_badge(msg)
         render_sources(msg.get("sources"))
 
 def pick_suggestion():
@@ -137,6 +145,7 @@ def pick_suggestion():
 
 
 prompt = st.session_state.pop("pending_prompt", None)
+from_voice = False
 if len(st.session_state.messages) == 1:  # 첫 질문 전에만 예시 질문 표시
     st.pills("예시 질문", list(SUGGESTIONS), label_visibility="collapsed", key="suggestion",
              on_change=pick_suggestion)
@@ -172,7 +181,7 @@ if submission:
         if not heard:
             st.warning("음성을 알아듣지 못했어요. 조금 더 크게, 또렷하게 다시 말해 주세요.", icon=":material/mic_off:")
         elif st.session_state.voice_auto_send:
-            prompt = heard
+            prompt, from_voice = heard, True
         else:
             # 받아쓴 문장을 입력창에 넣어 확인 후 전송 (시연 중 오인식을 바로 고칠 수 있게)
             st.session_state.pending_input = heard
@@ -180,9 +189,11 @@ if submission:
             st.rerun()
 
 if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    user_msg = {"role": "user", "content": prompt, "voice": from_voice}
+    st.session_state.messages.append(user_msg)
     with st.chat_message("user"):
         st.markdown(prompt)
+        render_voice_badge(user_msg)
 
     with st.chat_message("assistant"):
         sources: dict = {}

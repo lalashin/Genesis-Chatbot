@@ -20,6 +20,7 @@
 `st.chat_input(accept_audio=True)`로 녹음하고, `voice.transcribe()`가 Gemini에 녹음과 함께
 "제네시스 차량 매뉴얼 질문"이라는 맥락과 차량 용어 목록(약 50개)을 줘서 받아쓴다.
 받아쓴 문장은 기본적으로 **입력창에 넣어 확인 후 전송**한다(사이드바에서 바로 전송으로 변경 가능).
+> 2026-10-07 변경: 기본값을 바로 전송 + 음성 질문 표시로 바꿈 → [006](006-voice-auto-send.md)
 
 ## 이유 (측정)
 TTS 합성 음성 10문장으로 비교 (`eval/run_voice_eval.py`, 결과: `docs/eval/2026-10-07_voice.md`):

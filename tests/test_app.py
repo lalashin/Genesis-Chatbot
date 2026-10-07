@@ -66,6 +66,62 @@ def test_rate_limit_shows_korean_notice_and_app_recovers(app):
     assert msgs[-1]["sources"] == {"pages": [23], "method": "vector"}
 
 
+class FakeAudio:
+    type = "audio/wav"
+
+    def getvalue(self):
+        return b"RIFF-fake"
+
+
+class FakeSubmission:
+    """녹음만 하고 글자는 없는 st.chat_input 제출 값 (AppTest는 녹음 제출을 지원하지 않아 직접 만듦)."""
+    text = ""
+    audio = FakeAudio()
+
+
+def voice_app(monkeypatch, auto_send: bool):
+    """입력창이 녹음을 한 번 제출하고, 받아쓰기는 고정 문장을 돌려주도록 바꿔 끼운 앱."""
+    import streamlit
+    import voice
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(voice, "transcribe", lambda audio, mime: "차체에 흠집이 났을 때 관리 방법")
+    monkeypatch.setattr(agent, "stream_answer", lambda *_: iter(["세차 후 왁스를 바르세요."]))
+
+    real_chat_input = streamlit.chat_input
+    state = {"submit": False}
+
+    def fake_chat_input(*args, **kwargs):
+        real_chat_input(*args, **kwargs)  # 화면에는 진짜 입력창을 그림
+        if state["submit"]:
+            state["submit"] = False
+            return FakeSubmission()
+        return None
+
+    monkeypatch.setattr(streamlit, "chat_input", fake_chat_input)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    at.button(key="chat_toggle").click().run()
+    at.toggle(key="voice_auto_send").set_value(auto_send).run()
+    state["submit"] = True
+    return at.run()
+
+
+def test_voice_auto_send_shows_transcript_as_voice_question(monkeypatch):
+    at = voice_app(monkeypatch, auto_send=True)
+    assert not at.exception
+    user = [m for m in at.session_state["messages"] if m["role"] == "user"]
+    assert user == [{"role": "user", "content": "차체에 흠집이 났을 때 관리 방법", "voice": True}]
+    assert any("음성 질문" in c.value for c in at.caption)  # 받아쓴 문장임을 표시
+    assert at.session_state["messages"][-1]["content"] == "세차 후 왁스를 바르세요."
+
+
+def test_voice_confirm_mode_puts_transcript_in_input(monkeypatch):
+    at = voice_app(monkeypatch, auto_send=False)
+    assert not at.exception
+    assert [m for m in at.session_state["messages"] if m["role"] == "user"] == []  # 아직 전송 안 됨
+    assert at.chat_input[0].value == "차체에 흠집이 났을 때 관리 방법"  # 입력창에 들어가 확인 대기
+
+
 def test_daily_quota_notice(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 

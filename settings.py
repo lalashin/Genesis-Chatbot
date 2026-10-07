@@ -8,7 +8,9 @@ LLM_TEMPERATURE = 0.2
 SEARCH_K = 3  # 검색해서 답변 근거로 쓸 매뉴얼 조각 수
 
 # 음성으로 받아쓴 문장을 바로 전송할지(True), 입력창에 넣어 확인 후 전송할지(False)
-VOICE_AUTO_SEND = False
+# 시연 흐름("말하면 답이 나온다")을 위해 바로 전송이 기본. 받아쓴 문장은 말풍선에 그대로 표시됨
+# (docs/decisions/006-voice-auto-send.md). 사이드바에서 실행 중에도 바꿀 수 있음.
+VOICE_AUTO_SEND = True
 
 SYSTEM_PROMPT = """당신은 제네시스 차량 매뉴얼 전문가입니다.
 사용자의 질문에 친절하고 전문적으로 답변해주세요.
