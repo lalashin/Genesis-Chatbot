@@ -15,7 +15,7 @@
 | [`eval/`](eval/) | 검색 품질 평가 세트와 결과 | 데이터/검색을 바꿀 때 |
 | [`analysis/`](analysis/) | 기획서 대비 구현 갭 분석 (`/pdca analyze`) | 단계 구현을 마쳤을 때 |
 | [`report/`](report/) | 완료 보고서 (`/pdca report`): 결과·전후 수치·배운 점 | 고도화를 마쳤을 때 |
-| [`lessons/`](lessons/) | 교육용 차시 자료 | 단계가 끝나 정리할 때 |
+| [`lessons/`](lessons/) | **[강의 활용 가이드](lessons/GUIDE.md)**, 차시 목차 초안 | 강의·시연을 준비할 때 |
 | [`templates/`](templates/) | 위 문서들의 작성 틀 | 새 문서를 만들 때 |
 
 ## 기록 규칙
