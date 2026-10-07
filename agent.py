@@ -1,76 +1,105 @@
 """
-매뉴얼 Q&A 에이전트.
+매뉴얼 Q&A 어시스턴트 (RAG 체인).
 
-- search_manual 도구가 검색한 매뉴얼 페이지를 출처(sources)로 함께 돌려줍니다.
-- stream_answer()는 답변을 토큰 단위로 흘려보내 화면에 바로 표시할 수 있게 합니다.
-- friendly_error()는 API 오류를 시연 중에도 당황하지 않을 한국어 안내로 바꿉니다.
+예전에는 LangChain Agent가 "검색할지"를 모델에게 먼저 물어본 뒤 검색하고 다시 답변을 만들어
+질문 1개에 모델을 2~3번 호출했습니다(첫 글자까지 2~4초). 매뉴얼 Q&A는 거의 항상 검색이 필요하므로
+**검색을 먼저 하고 모델은 1번만 호출**하도록 바꿨습니다 → docs/decisions/007-rag-chain-for-speed.md
+
+- search(): 질문(이어지는 질문이면 직전 질문과 합쳐서)으로 매뉴얼 검색
+- stream(): 검색 결과를 근거로 답변을 토큰 단위로 생성
+- friendly_error(): API 오류를 한국어 안내로 변환
 """
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 
-from langchain.agents import create_agent
-from langchain.tools import tool
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from errors import classify
-from retrieval import ManualRetriever, page_label
-from settings import LLM_MODEL, LLM_TEMPERATURE, SEARCH_K, SYSTEM_PROMPT
+from retrieval import ManualRetriever, SearchResult, page_label
+from settings import (
+    HISTORY_TURNS,
+    LLM_MAX_OUTPUT_TOKENS,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_THINKING_LEVEL,
+    SEARCH_K,
+    SYSTEM_PROMPT,
+)
 
 EMPTY_ANSWER = "답변을 생성하지 못했습니다. 질문을 조금 바꿔서 다시 물어봐 주세요."
 
-
-def build_agent(retriever: ManualRetriever):
-    @tool(response_format="content_and_artifact")
-    def search_manual(query: str):
-        """제네시스 차량 매뉴얼을 검색합니다. 차량 문제, 기능 사용법, 유지보수 정보 등을 찾을 때 사용하세요."""
-        result = retriever.search(query, k=SEARCH_K)
-        pages = sorted({p for p in (page_label(d) for d in result.docs) if p})
-        if not result.docs:
-            return "관련 정보를 찾을 수 없습니다.", {"pages": [], "method": result.method}
-        content = "\n\n".join(f"[{page_label(d)}페이지]\n{d.page_content}" for d in result.docs)
-        return content, {"pages": pages, "method": result.method}
-
-    model = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=LLM_TEMPERATURE, max_retries=1)
-    return create_agent(model, [search_manual], system_prompt=SYSTEM_PROMPT)
+# "그럼 냉각수는?"처럼 앞 질문에 기대는 짧은 질문은 직전 질문과 합쳐서 검색합니다.
+FOLLOW_UP_WORDS = ("그럼", "그러면", "그건", "그거", "이건", "이거", "저건", "거기", "그때", "그 다음", "아까", "방금")
+FOLLOW_UP_MAX_LEN = 12
 
 
-def to_langchain_messages(messages: list[dict]) -> list:
-    history = []
-    for m in messages:
-        if m.get("greeting"):
-            continue
-        cls = HumanMessage if m["role"] == "user" else AIMessage
-        history.append(cls(content=m["content"]))
-    return history
+@dataclass
+class Assistant:
+    retriever: ManualRetriever
+    model: ChatGoogleGenerativeAI
 
+    def search(self, messages: list[dict]) -> SearchResult:
+        return self.retriever.search(search_query(messages), k=SEARCH_K)
 
-def stream_answer(agent, messages: list[dict], sources: dict) -> Iterator[str]:
-    """답변 텍스트를 조각 단위로 yield 합니다. 검색한 페이지는 sources에 모읍니다.
-
-    sources = {"pages": [...], "method": "vector" | "keyword"}
-    """
-    produced = False      # 공백이 아닌 글자를 한 번이라도 냈는지 (빈 답변이 기록에 남으면 다음 요청이 400)
-    need_break = False    # 도구 호출 전 서두("검색해 볼게요")와 최종 답변이 붙지 않도록 줄바꿈
-    stream = agent.stream({"messages": to_langchain_messages(messages)}, stream_mode="messages")
-    for chunk, meta in stream:
-        if isinstance(chunk, ToolMessage) and isinstance(chunk.artifact, dict):
-            sources["pages"] = sorted(set(sources.get("pages", [])) | set(chunk.artifact["pages"]))
-            # 여러 번 검색했으면 한 번이라도 키워드 검색을 쓴 경우 keyword로 표시
-            if sources.get("method") != "keyword":
-                sources["method"] = chunk.artifact["method"]
-            need_break = produced
-        elif isinstance(chunk, AIMessageChunk) and meta.get("langgraph_node") == "model":
+    def stream(self, messages: list[dict], result: SearchResult) -> Iterator[str]:
+        """검색 결과를 근거로 답변을 조각 단위로 yield 합니다. 공백뿐이면 대체 문구."""
+        produced = False
+        for chunk in self.model.stream(build_prompt(messages, result)):
             text = chunk.text
             if not text:
                 continue
-            if need_break:
-                yield "\n\n"
-                need_break = False
             produced = produced or bool(text.strip())
             yield text
-    if not produced:
-        yield EMPTY_ANSWER
+        if not produced:
+            yield EMPTY_ANSWER
+
+
+def build_assistant(retriever: ManualRetriever) -> Assistant:
+    model = ChatGoogleGenerativeAI(
+        model=LLM_MODEL,
+        temperature=LLM_TEMPERATURE,
+        max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
+        thinking_config={"thinking_level": LLM_THINKING_LEVEL},
+        max_retries=1,
+    )
+    return Assistant(retriever, model)
+
+
+def user_questions(messages: list[dict]) -> list[str]:
+    return [m["content"] for m in messages if m["role"] == "user"]
+
+
+def search_query(messages: list[dict]) -> str:
+    questions = user_questions(messages)
+    current = questions[-1]
+    if len(questions) >= 2 and (
+        len(current.replace(" ", "")) <= FOLLOW_UP_MAX_LEN or current.startswith(FOLLOW_UP_WORDS)
+    ):
+        return f"{questions[-2]} {current}"
+    return current
+
+
+def format_context(result: SearchResult) -> str:
+    if not result.docs:
+        return "(관련 매뉴얼 내용을 찾지 못했습니다)"
+    return "\n\n".join(f"[{page_label(d)}페이지]\n{d.page_content}" for d in result.docs)
+
+
+def build_prompt(messages: list[dict], result: SearchResult) -> list:
+    """시스템 프롬프트 + 매뉴얼 발췌 + 최근 대화 + 현재 질문."""
+    system = f"{SYSTEM_PROMPT}\n\n## 매뉴얼 발췌 (이 내용만 근거로 답변)\n{format_context(result)}"
+    history = [m for m in messages if not m.get("greeting")]
+    recent = history[-(HISTORY_TURNS * 2 + 1):]  # 최근 N턴 + 현재 질문
+    return [SystemMessage(system)] + [
+        (HumanMessage if m["role"] == "user" else AIMessage)(content=m["content"]) for m in recent
+    ]
+
+
+def sources_of(result: SearchResult) -> dict:
+    pages = sorted({p for p in (page_label(d) for d in result.docs) if p})
+    return {"pages": pages, "method": result.method}
 
 
 def clean_markdown(text: str) -> str:

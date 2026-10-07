@@ -28,17 +28,26 @@ def app(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")  # 실제 호출은 하지 않음
     calls = {"n": 0}
 
-    def fake_stream_answer(_agent, messages, sources):
+    def fake_stream(self, messages, result):
         calls["n"] += 1
         if calls["n"] == 1:
             raise Exception(RATE_LIMIT)
-        sources.update({"pages": [23], "method": "vector"})
         yield "엔진 오일은 6.2ℓ입니다."
 
-    monkeypatch.setattr(agent, "stream_answer", fake_stream_answer)
+    fake_search_results(monkeypatch)
+    monkeypatch.setattr(agent.Assistant, "stream", fake_stream)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.button(key="chat_toggle").click().run()
     return at
+
+
+def fake_search_results(monkeypatch):
+    from langchain_core.documents import Document
+
+    from retrieval import SearchResult
+
+    doc = Document(page_content="2.5 터보 6.2 ℓ", metadata={"page": 22})
+    monkeypatch.setattr(agent.Assistant, "search", lambda self, messages: SearchResult([doc], "vector"))
 
 
 def user_messages(at):
@@ -86,7 +95,8 @@ def voice_app(monkeypatch, auto_send: bool):
 
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setattr(voice, "transcribe", lambda audio, mime: "차체에 흠집이 났을 때 관리 방법")
-    monkeypatch.setattr(agent, "stream_answer", lambda *_: iter(["세차 후 왁스를 바르세요."]))
+    fake_search_results(monkeypatch)
+    monkeypatch.setattr(agent.Assistant, "stream", lambda *_: iter(["세차 후 왁스를 바르세요."]))
 
     real_chat_input = streamlit.chat_input
     state = {"submit": False}
@@ -125,11 +135,12 @@ def test_voice_confirm_mode_puts_transcript_in_input(monkeypatch):
 def test_daily_quota_notice(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
-    def fake(_agent, _messages, _sources):
+    def fake(self, _messages, _result):
         raise Exception("429 RESOURCE_EXHAUSTED 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'")
         yield  # noqa: unreachable — 제너레이터로 만들기 위함
 
-    monkeypatch.setattr(agent, "stream_answer", fake)
+    fake_search_results(monkeypatch)
+    monkeypatch.setattr(agent.Assistant, "stream", fake)
     at = AppTest.from_file(APP, default_timeout=60).run()
     at.button(key="chat_toggle").click().run()
     at.chat_input[0].set_value("질문").run()

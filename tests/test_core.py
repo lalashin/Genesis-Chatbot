@@ -9,11 +9,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.documents import Document  # noqa: E402
-from langchain_core.messages import AIMessageChunk, ToolMessage  # noqa: E402
+from langchain_core.messages import AIMessageChunk  # noqa: E402
 
-from agent import EMPTY_ANSWER, clean_markdown, friendly_error, stream_answer  # noqa: E402
+from agent import (  # noqa: E402
+    EMPTY_ANSWER, Assistant, build_prompt, clean_markdown, friendly_error, search_query, sources_of,
+)
 from errors import classify, is_quota_or_unavailable  # noqa: E402
-from retrieval import KeywordIndex  # noqa: E402
+from retrieval import KeywordIndex, SearchResult  # noqa: E402
 
 
 # --- errors.classify: 숫자가 섞인 메시지를 한도 오류로 오분류하지 않는다 ---
@@ -45,44 +47,54 @@ def test_keyword_bigram_finds_korean_without_spaces():
     assert idx.search("타이어공기압경고등", k=1)[0].page_content.startswith("타이어")
 
 
-# --- stream_answer: 빈 답변, 서두와 답변 구분, 키워드 검색 표시 유지 ---
-class FakeAgent:
-    def __init__(self, events):
-        self.events = events
+# --- Assistant (RAG 체인): 이어지는 질문 검색어, 빈 답변, 프롬프트 구성 ---
+class FakeModel:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.prompt = None
 
-    def stream(self, _inputs, stream_mode):
-        yield from self.events
+    def stream(self, prompt):
+        self.prompt = prompt
+        for c in self.chunks:
+            yield AIMessageChunk(content=c)
 
 
-MODEL = {"langgraph_node": "model"}
-TOOLS = {"langgraph_node": "tools"}
+def msgs(*pairs):
+    return [{"role": r, "content": c} for r, c in pairs]
 
 
-def tool_msg(pages, method):
-    return ToolMessage(content="...", tool_call_id="1", artifact={"pages": pages, "method": method})
+def test_follow_up_question_is_combined_with_previous():
+    m = msgs(("user", "엔진 오일 용량은?"), ("assistant", "6.2ℓ"), ("user", "그럼 냉각수는?"))
+    assert search_query(m) == "엔진 오일 용량은? 그럼 냉각수는?"
+
+
+def test_new_topic_question_is_searched_alone():
+    m = msgs(("user", "엔진 오일 용량은?"), ("assistant", "6.2ℓ"), ("user", "스마트 크루즈 컨트롤 사용법 알려줘"))
+    assert search_query(m) == "스마트 크루즈 컨트롤 사용법 알려줘"
 
 
 def test_whitespace_only_answer_becomes_fallback():
-    out = "".join(stream_answer(FakeAgent([(AIMessageChunk(content="\n "), MODEL)]), [], {}))
+    a = Assistant(retriever=None, model=FakeModel(["\n ", " "]))
+    out = "".join(a.stream(msgs(("user", "질문")), SearchResult([], "vector")))
     assert out.endswith(EMPTY_ANSWER)
 
 
-def test_preamble_and_answer_are_separated():
-    agent = FakeAgent([
-        (AIMessageChunk(content="검색해 보겠습니다."), MODEL),
-        (tool_msg([18], "vector"), TOOLS),
-        (AIMessageChunk(content="공기압은 33psi입니다."), MODEL),
-    ])
-    out = "".join(stream_answer(agent, [], {}))
-    assert "검색해 보겠습니다.\n\n공기압은" in out
+def test_prompt_contains_manual_excerpt_and_recent_history_only():
+    docs = [Document(page_content="2.5 터보 6.2 ℓ", metadata={"page": 22})]
+    history = [{"role": "assistant", "content": "안녕하세요", "greeting": True}]
+    for i in range(6):
+        history += msgs(("user", f"질문{i}"), ("assistant", f"답{i}"))
+    history += msgs(("user", "현재 질문"))
+    prompt = build_prompt(history, SearchResult(docs, "vector"))
+    assert "[23페이지]" in prompt[0].content and "6.2" in prompt[0].content
+    contents = [p.content for p in prompt[1:]]
+    assert contents[-1] == "현재 질문" and "안녕하세요" not in contents
+    assert len(contents) == 7  # 최근 3턴(6개) + 현재 질문
 
 
-def test_keyword_method_is_kept_across_multiple_searches():
-    sources = {}
-    agent = FakeAgent([(tool_msg([23], "keyword"), TOOLS), (tool_msg([24], "vector"), TOOLS),
-                       (AIMessageChunk(content="답"), MODEL)])
-    "".join(stream_answer(agent, [], sources))
-    assert sources == {"pages": [23, 24], "method": "keyword"}
+def test_sources_of_lists_pages_and_method():
+    docs = [Document(page_content="a", metadata={"page": 22}), Document(page_content="b", metadata={"page": 713})]
+    assert sources_of(SearchResult(docs, "keyword")) == {"pages": [23, 714], "method": "keyword"}
 
 
 def test_clean_markdown_removes_br():

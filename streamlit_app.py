@@ -4,7 +4,7 @@ GENESIS AI Assistant - 제네시스 차량 매뉴얼 RAG 챗봇 (화면)
 구성
 - settings.py           : 모델 이름, 프롬프트 등 설정
 - retrieval.py          : 매뉴얼 검색 (벡터 검색 + 한도 초과 시 키워드 검색)
-- agent.py              : 답변 에이전트, 스트리밍, 오류 안내
+- agent.py              : 검색 → 답변 생성(RAG 체인), 스트리밍, 오류 안내
 - voice.py              : 음성 받아쓰기 (Gemini)
 - styles.css            : 배경 이미지 등 테마로 못 하는 스타일
 - .streamlit/config.toml: 색상·폰트 테마
@@ -15,7 +15,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-from agent import build_agent, clean_markdown, friendly_error, stream_answer
+from agent import build_assistant, clean_markdown, friendly_error, sources_of
 from retrieval import ManualRetriever
 from settings import VOICE_AUTO_SEND
 from vectorstore_config import PERSIST_DIR
@@ -52,10 +52,10 @@ def load_agent():
     if not os.path.exists(PERSIST_DIR):
         st.error("벡터 DB가 없습니다. `python build_vectorstore.py`를 먼저 실행해주세요.")
         st.stop()
-    return build_agent(ManualRetriever())
+    return build_assistant(ManualRetriever())
 
 
-agent = load_agent()
+assistant = load_agent()
 
 # === 3. 세션 상태 ===
 st.session_state.setdefault("messages", [GREETING])
@@ -196,10 +196,14 @@ if prompt:
         render_voice_badge(user_msg)
 
     with st.chat_message("assistant"):
-        sources: dict = {}
         try:
-            with st.spinner("매뉴얼을 찾는 중..."):
-                answer = st.write_stream(stream_answer(agent, st.session_state.messages, sources))
+            # 진행 단계를 보여 줘서 기다림이 덜 답답하게 (검색 → 답변 작성)
+            with st.status("매뉴얼 검색 중...", type="compact") as status:
+                result = assistant.search(st.session_state.messages)
+                sources = sources_of(result)
+                found = ", ".join(f"{p}쪽" for p in sources["pages"]) or "관련 내용 없음"
+                status.update(label=f"매뉴얼 검색 완료 ({found}) · 답변 작성 중", state="complete")
+            answer = st.write_stream(assistant.stream(st.session_state.messages, result))
         except Exception as e:
             st.session_state.messages.pop()  # 실패한 질문은 대화 기록에서 제외
             st.error(friendly_error(e), icon=":material/error:")
